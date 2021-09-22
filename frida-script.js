@@ -103,7 +103,7 @@ setTimeout(function () {
             const okhttp3_Activity_1 = Java.use('okhttp3.CertificatePinner');
             okhttp3_Activity_1.check.overload('java.lang.String', 'java.util.List').implementation = function (a, b) {
                 console.log('  --> Bypassing OkHTTPv3 (list): ' + a);
-                return true;
+                return;
             };
             console.log('[+] OkHTTPv3 (list)');
         } catch (err) {
@@ -115,7 +115,7 @@ setTimeout(function () {
             const okhttp3_Activity_2 = Java.use('okhttp3.CertificatePinner');
             okhttp3_Activity_2.check.overload('java.lang.String', 'java.security.cert.Certificate').implementation = function (a, b) {
                 console.log('  --> Bypassing OkHTTPv3 (cert): ' + a);
-                return true;
+                return;
             };
             console.log('[+] OkHTTPv3 (cert)');
         } catch (err) {
@@ -126,7 +126,7 @@ setTimeout(function () {
             const okhttp3_Activity_3 = Java.use('okhttp3.CertificatePinner');
             okhttp3_Activity_3.check.overload('java.lang.String', '[Ljava.security.cert.Certificate;').implementation = function (a, b) {
                 console.log('  --> Bypassing OkHTTPv3 (cert array): ' + a);
-                return true;
+                return;
             };
             console.log('[+] OkHTTPv3 (cert array)');
         } catch (err) {
@@ -137,6 +137,7 @@ setTimeout(function () {
             const okhttp3_Activity_4 = Java.use('okhttp3.CertificatePinner');
             okhttp3_Activity_4['check$okhttp'].implementation = function (a, b) {
                 console.log('  --> Bypassing OkHTTPv3 ($okhttp): ' + a);
+                return;
             };
             console.log('[+] OkHTTPv3 ($okhttp)');
         } catch (err) {
