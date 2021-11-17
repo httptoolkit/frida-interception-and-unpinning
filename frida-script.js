@@ -11,6 +11,67 @@ setTimeout(function () {
         console.log("---");
         console.log("Unpinning Android app...");
 
+        /// -- Generic hook to protect against SSLPeerUnverifiedException -- ///
+
+        // In some cases, with unusual cert pinning approaches, or heavy obfuscation, we can't
+        // match the real method & package names. This is a problem! Fortunately, we can still
+        // always match built-in types, so here we spot all failures that use the built-in cert
+        // error type (notably this includes OkHttp), and after the first failure, we dynamically
+        // generate & inject a patch to completely disable the method that threw the error.
+        try {
+            const UnverifiedCertError = Java.use('javax.net.ssl.SSLPeerUnverifiedException');
+            UnverifiedCertError.$init.implementation = function (str) {
+                console.log('  --> Unexpected SSL verification failure, adding dynamic patch...');
+
+                try {
+                    const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
+                    const exceptionStackIndex = stackTrace.findIndex(stack =>
+                        stack.getClassName() === "javax.net.ssl.SSLPeerUnverifiedException"
+                    );
+                    const callingFunctionStack = stackTrace[exceptionStackIndex + 1];
+
+                    const className = callingFunctionStack.getClassName();
+                    const methodName = callingFunctionStack.getMethodName();
+
+                    console.log(`      Thrown by ${className}->${methodName}`);
+
+                    const callingClass = Java.use(className);
+                    const callingMethod = callingClass[methodName];
+
+                    if (callingMethod.implementation) return; // Already patched by Frida - skip it
+
+                    console.log('      Attempting to patch automatically...');
+                    const returnTypeName = callingMethod.returnType.type;
+
+                    callingMethod.implementation = function () {
+                        console.log(`  --> Bypassing ${className}->${methodName} (automatic exception patch)`);
+
+                        // This is not a perfect fix! Most unknown cases like this are really just
+                        // checkCert(cert) methods though, so doing nothing is perfect, and if we
+                        // do need an actual return value then this is probably the best we can do,
+                        // and at least we're logging the method name so you can patch it manually:
+
+                        if (returnTypeName === 'void') {
+                            return;
+                        } else {
+                            return null;
+                        }
+                    };
+
+                    console.log(`      [+] ${className}->${methodName} (automatic exception patch)`);
+                } catch (e) {
+                    console.log('      [ ] Failed to automatically patch failure');
+                }
+
+                return this.$init(str);
+            };
+            console.log('[+] SSLPeerUnverifiedException auto-patcher');
+        } catch (err) {
+            console.log('[ ] SSLPeerUnverifiedException auto-patcher');
+        }
+
+        /// -- Specific targeted hooks: -- ///
+
         // HttpsURLConnection
         try {
             const HttpsURLConnection = Java.use("javax.net.ssl.HttpsURLConnection");
