@@ -441,9 +441,9 @@ setTimeout(function () {
         } catch (err) {
             console.log('[ ] Boye AbstractVerifier');
         }
-    });
 
-    console.log("Unpinning setup cmopleted");
-    console.log("---");
+        console.log("Unpinning setup completed");
+        console.log("---");
+    });
 
 }, 0);
