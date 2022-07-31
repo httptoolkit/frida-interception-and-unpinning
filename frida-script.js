@@ -18,57 +18,57 @@ setTimeout(function () {
         // always match built-in types, so here we spot all failures that use the built-in cert
         // error type (notably this includes OkHttp), and after the first failure, we dynamically
         // generate & inject a patch to completely disable the method that threw the error.
-        // try {
-        //     const UnverifiedCertError = Java.use('javax.net.ssl.SSLPeerUnverifiedException');
-        //     UnverifiedCertError.$init.implementation = function (str) {
-        //         console.log('  --> Unexpected SSL verification failure, adding dynamic patch...');
+        try {
+            const UnverifiedCertError = Java.use('javax.net.ssl.SSLPeerUnverifiedException');
+            UnverifiedCertError.$init.implementation = function (str) {
+                console.log('  --> Unexpected SSL verification failure, adding dynamic patch...');
 
-        //         try {
-        //             const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
-        //             const exceptionStackIndex = stackTrace.findIndex(stack =>
-        //                 stack.getClassName() === "javax.net.ssl.SSLPeerUnverifiedException"
-        //             );
-        //             const callingFunctionStack = stackTrace[exceptionStackIndex + 1];
+                try {
+                    const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
+                    const exceptionStackIndex = stackTrace.findIndex(stack =>
+                        stack.getClassName() === "javax.net.ssl.SSLPeerUnverifiedException"
+                    );
+                    const callingFunctionStack = stackTrace[exceptionStackIndex + 1];
 
-        //             const className = callingFunctionStack.getClassName();
-        //             const methodName = callingFunctionStack.getMethodName();
+                    const className = callingFunctionStack.getClassName();
+                    const methodName = callingFunctionStack.getMethodName();
 
-        //             console.log(`      Thrown by ${className}->${methodName}`);
+                    console.log(`      Thrown by ${className}->${methodName}`);
 
-        //             const callingClass = Java.use(className);
-        //             const callingMethod = callingClass[methodName];
+                    const callingClass = Java.use(className);
+                    const callingMethod = callingClass[methodName];
 
-        //             if (callingMethod.implementation) return; // Already patched by Frida - skip it
+                    if (callingMethod.implementation) return; // Already patched by Frida - skip it
 
-        //             console.log('      Attempting to patch automatically...');
-        //             const returnTypeName = callingMethod.returnType.type;
+                    console.log('      Attempting to patch automatically...');
+                    const returnTypeName = callingMethod.returnType.type;
 
-        //             callingMethod.implementation = function () {
-        //                 console.log(`  --> Bypassing ${className}->${methodName} (automatic exception patch)`);
+                    callingMethod.implementation = function () {
+                        console.log(`  --> Bypassing ${className}->${methodName} (automatic exception patch)`);
 
-        //                 // This is not a perfect fix! Most unknown cases like this are really just
-        //                 // checkCert(cert) methods though, so doing nothing is perfect, and if we
-        //                 // do need an actual return value then this is probably the best we can do,
-        //                 // and at least we're logging the method name so you can patch it manually:
+                        // This is not a perfect fix! Most unknown cases like this are really just
+                        // checkCert(cert) methods though, so doing nothing is perfect, and if we
+                        // do need an actual return value then this is probably the best we can do,
+                        // and at least we're logging the method name so you can patch it manually:
 
-        //                 if (returnTypeName === 'void') {
-        //                     return;
-        //                 } else {
-        //                     return null;
-        //                 }
-        //             };
+                        if (returnTypeName === 'void') {
+                            return;
+                        } else {
+                            return null;
+                        }
+                    };
 
-        //             console.log(`      [+] ${className}->${methodName} (automatic exception patch)`);
-        //         } catch (e) {
-        //             console.log('      [ ] Failed to automatically patch failure');
-        //         }
+                    console.log(`      [+] ${className}->${methodName} (automatic exception patch)`);
+                } catch (e) {
+                    console.log('      [ ] Failed to automatically patch failure');
+                }
 
-        //         return this.$init(str);
-        //     };
-        //     console.log('[+] SSLPeerUnverifiedException auto-patcher');
-        // } catch (err) {
-        //     console.log('[ ] SSLPeerUnverifiedException auto-patcher');
-        // }
+                return this.$init(str);
+            };
+            console.log('[+] SSLPeerUnverifiedException auto-patcher');
+        } catch (err) {
+            console.log('[ ] SSLPeerUnverifiedException auto-patcher');
+        }
 
         /// -- Specific targeted hooks: -- ///
 
