@@ -503,6 +503,18 @@ setTimeout(function () {
             console.log('[ ] Boye AbstractVerifier');
         }
 
+		// Appmattus
+		try {
+            const appmatus_Activity = Java.use('com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyInterceptor');
+            appmatus_Activity['intercept'].implementation = function (a) {
+                console.log('  --> Bypassing Appmattus (Transparency)');
+                return a.proceed(a.request());
+            };
+            console.log('[+] Appmattus (Transparency)');
+        } catch (err) {
+            console.log('[ ] Appmattus (Transparency)');
+        }
+
         console.log("Unpinning setup completed");
         console.log("---");
     });
