@@ -510,9 +510,32 @@ setTimeout(function () {
                 console.log('  --> Bypassing Appmattus (Transparency)');
                 return a.proceed(a.request());
             };
-            console.log('[+] Appmattus (Transparency)');
+            console.log('[+] Appmattus (CertificateTransparencyInterceptor)');
         } catch (err) {
-            console.log('[ ] Appmattus (Transparency)');
+            console.log('[ ] Appmattus (CertificateTransparencyInterceptor)');
+        }
+
+        try {
+            const CertificateTransparencyTrustManager = Java.use(
+                'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyTrustManager'
+            );
+            CertificateTransparencyTrustManager['checkServerTrusted'].overload(
+                '[Ljava.security.cert.X509Certificate;',
+                'java.lang.String'
+            ).implementation = function (x509CertificateArr, str) {
+                console.log('  --> Bypassing Appmattus (CertificateTransparencyTrustManager)');
+            };
+            CertificateTransparencyTrustManager['checkServerTrusted'].overload(
+                '[Ljava.security.cert.X509Certificate;',
+                'java.lang.String',
+                'java.lang.String'
+            ).implementation = function (x509CertificateArr, str, str2) {
+                console.log('  --> Bypassing Appmattus (CertificateTransparencyTrustManager)');
+                return Java.use('java.util.ArrayList').$new();
+            };
+            console.log('[+] Appmattus (CertificateTransparencyTrustManager)');
+        } catch (err) {
+            console.log('[ ] Appmattus (CertificateTransparencyTrustManager)');
         }
 
         console.log("Unpinning setup completed");
