@@ -2,8 +2,14 @@
 const PROXY_HOST = '192.168.104.248';
 const PROXY_PORT = 8000;
 
-setTimeout(function () {
-    Java.perform(function () {
+setTimeout(() => {
+    Java.perform(() => {
+        Java.use('java.lang.System').setProperty('http.proxyHost', PROXY_HOST);
+        Java.use('java.lang.System').setProperty('http.proxyPort', PROXY_PORT.toString());
+        Java.use('java.lang.System').setProperty('https.proxyHost', PROXY_HOST);
+        Java.use('java.lang.System').setProperty('https.proxyPort', PROXY_PORT.toString());
+
+        const Collections = Java.use('java.util.Collections');
         const ArrayList = Java.use('java.util.ArrayList');
         const ProxyType = Java.use('java.net.Proxy$Type');
         const InetSocketAddress = Java.use('java.net.InetSocketAddress');
@@ -13,6 +19,7 @@ setTimeout(function () {
             ProxyType.HTTP.value,
             InetSocketAddress.$new(PROXY_HOST, PROXY_PORT)
         );
+        const getTargetProxyList = () => Collections.singletonList(targetProxy);
 
         const ProxySelector = Java.use('java.net.ProxySelector');
 
@@ -27,11 +34,7 @@ setTimeout(function () {
         // Replace the 'select' of every implementation, so they all send traffic to us:
         proxySelectorClasses.forEach(ProxySelectorCls => {
             console.log('Rewriting', ProxySelectorCls.toString());
-            ProxySelectorCls.select.implementation = () => {
-                const proxyList = ArrayList.$new();
-                proxyList.add(targetProxy);
-                return proxyList;
-            };
+            ProxySelectorCls.select.implementation = () => getTargetProxyList()
         });
 
         console.log(
