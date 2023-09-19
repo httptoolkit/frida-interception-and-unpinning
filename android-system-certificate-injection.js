@@ -1,23 +1,17 @@
-const CERT_PEM = `-----BEGIN CERTIFICATE-----
-MIIDTzCCAjegAwIBAgIRClDpdJeylUmDvNyq5qq+plcwDQYJKoZIhvcNAQELBQAw
-QTEYMBYGA1UEAxMPSFRUUCBUb29sa2l0IENBMQswCQYDVQQGEwJYWDEYMBYGA1UE
-ChMPSFRUUCBUb29sa2l0IENBMB4XDTIyMTIyNTE5MDQ1MFoXDTIzMTIyNjE5MDQ1
-MFowQTEYMBYGA1UEAxMPSFRUUCBUb29sa2l0IENBMQswCQYDVQQGEwJYWDEYMBYG
-A1UEChMPSFRUUCBUb29sa2l0IENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
-CgKCAQEAz4pwm0pLDvf8qVmAiOi2cvu8xDgboetoLWBoONOY2wvoEFRylLUGaieP
-UG5Yuofcj798uYPEqPLoF2ugnw8J/lhYhkMqTEbuqoyZT7DooBiqtSbm4b++T/Zt
-F6YnpkYeWIkv88UJaRvLG8OHytVbiC71JQ/DFCEjzNzATCKT7UFqyF4ZsT3cnGJe
-3x1iiSzWxJsnDkNZmiQ+IDYSM/dx7RJYwrXO5oWbAHC7otdC66O9eB1uBYq9I8gU
-4FcVKHbWAH1BYbsoF/pQJLz2mAXD7E92/Vvho7FgTKYOUq0b58LF9UHt+gDRUGUC
-L4HtuMeb/Ckiwyoej50jqI//ER1XswIDAQABo0IwQDAPBgNVHRMBAf8EBTADAQH/
-MA4GA1UdDwEB/wQEAwIBxjAdBgNVHQ4EFgQUfsk69D2mzcAFjDX0GV53o3gySMMw
-DQYJKoZIhvcNAQELBQADggEBAH08sPexRXFxzuIVWD1aUoarYq8FwNBP+xusgZcg
-DmRKr0FpEyUjBxgVIsmd44WSX/TWdXokdd7aLPVnjwQbq2mhYtXAn4aIRn3QBNaj
-TvFQovVy+LCSRwZjvlpr/KJnXlVMrqLIxP++I6FqLO5G5zJ+qDF39C7RUkkMpvmU
-tiS70/zpt2LSfLUNtnS287P9s4wXEwbrkOOY6oNgKDz7jtNua0ZiPq2uGdqrkyZ2
-VPgirbNnuoC1uZmuy0Mvih4+8xrvJWHb9QO7JOH3cXA+ZiZ945V+viMEnV0YkQB6
-FL11l3fE9xzkPv357Z3e7QULnC8vDRgFAossuh8WBhNjjmo=
------END CERTIFICATE-----`;
+/**
+ * Once we have captured traffic (once it's being sent to our proxy port) the next step is
+ * to ensure any clients using TLS (HTTPS) trust our CA certificate, to allow us to intercept
+ * encrypted connections successfully.
+ *
+ * This script does so by attaching to the internals of Conscrypt (the Android SDK's standard
+ * TLS implementation) and pre-adding our certificate to the 'already trusted' cache, so that
+ * future connections trust it implicitly. This ensures that all normal uses of Android APIs
+ * for HTTPS & TLS will allow interception.
+ *
+ * This does not handle all standalone certificate pinning techniques - where the application
+ * actively rejects certificates that are trusted by default on the system. That's dealt with
+ * in the separate certificate unpinning script.
+ */
 
 Java.perform(() => {
     // First, we build a JVM representation of our certificate:
@@ -55,5 +49,5 @@ Java.perform(() => {
     // pinning too! It auto-trusts us in any implementation that uses TrustManagerImpl (Conscrypt) as
     // the underlying cert checking component.
 
-    console.log('Inject system certificate trust');
+    console.log('System certificate trust injected');
 });

@@ -12,9 +12,6 @@
  * to do proxy config alongside this, primarily to capture traffic that might be sent on any non-standard ports.
  */
 
-const PROXY_PORT = 8000;
-const PROXY_HOST = '127.0.0.1';
-
 // Ports which we recognize, and forcibly redirect to capture, if not captured already.
 const RECOGNIZED_PORTS = [
     80,
