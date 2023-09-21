@@ -45,7 +45,9 @@ setTimeout(() => {
 
         // Replace the 'select' of every implementation, so they all send traffic to us:
         proxySelectorClasses.forEach(ProxySelectorCls => {
-            console.log('Rewriting', ProxySelectorCls.toString());
+            if (DEBUG_MODE) {
+                console.debug('Rewriting', ProxySelectorCls.toString());
+            }
             ProxySelectorCls.select.implementation = () => getTargetProxyList()
         });
 

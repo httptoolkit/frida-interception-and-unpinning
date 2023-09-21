@@ -50,7 +50,6 @@ if (!connectFn) { // Should always be set, but just in case
                 const port = portAddrBytes.getUint16(0, false); // Big endian!
 
                 const shouldBeIntercepted = RECOGNIZED_PORTS.includes(port);
-                if (!shouldBeIntercepted) return; // Unrecognized port - probably not HTTP(S)
 
                 const isIPv6 = sockType === 'tcp6';
 
@@ -67,6 +66,16 @@ if (!connectFn) { // Should always be set, but just in case
                 );
 
                 if (isIntercepted) return;
+
+                if (!shouldBeIntercepted) {
+                    // Not intercecpted, sent to unrecognized port - probably not HTTP(S)
+                    if (DEBUG_MODE) {
+                        console.debug(`Allowing unintercepted connection to unrecognized port ${port}`);
+                    }
+                    return;
+                }
+
+                // Otherwise, it's an unintercepted connection that should be captured:
 
                 console.log(`Manually intercepting connection to ${
                     isIPv6
@@ -86,9 +95,21 @@ if (!connectFn) { // Should always be set, but just in case
                     // Skip 4 bytes: 2 family, 2 port
                     addrPtr.add(4).writeByteArray(PROXY_HOST_IPv4_BYTES);
                 }
+            } else if (DEBUG_MODE) {
+                console.debug(`Ignoring ${sockType} connection`);
             }
 
             // N.b. we ignore all non-TCP connections: both UDP and Unix streams
+        },
+        onLeave: function (result) {
+            if (!DEBUG_MODE) return;
+
+            const fd = this.sockFd;
+            const sockType = Socket.type(fd);
+            const address = Socket.peerAddress(fd);
+            console.debug(
+                `Connected fd ${fd} of type ${sockType} to ${JSON.stringify(address)} (${result.toInt32()})`
+            );
         }
     });
 

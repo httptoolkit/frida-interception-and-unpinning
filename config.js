@@ -23,3 +23,6 @@ FL11l3fE9xzkPv357Z3e7QULnC8vDRgFAossuh8WBhNjjmo=
 // Default emulator address for now:
 const PROXY_HOST = '127.0.0.1';
 const PROXY_PORT = 8000;
+
+// Set to enable extra logging:
+const DEBUG_MODE = false;
