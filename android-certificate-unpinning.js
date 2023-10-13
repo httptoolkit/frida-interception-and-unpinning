@@ -100,8 +100,11 @@ const PINNING_FIXES = {
     'com.android.org.conscrypt.CertPinManager': [
         {
             methodName: 'isChainValid',
-            overload: ['java.lang.String', 'java.util.List'],
             replacement: () => RETURN_TRUE
+        },
+        {
+            methodName: 'checkChainPinning',
+            replacement: () => NO_OP
         }
     ],
 
