@@ -26,3 +26,4 @@ const PROXY_PORT = 8000;
 
 // Set to enable extra logging:
 const DEBUG_MODE = false;
+console.log(''); // Add a new line just for clean output & to separate reloads

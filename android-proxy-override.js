@@ -46,14 +46,11 @@ setTimeout(() => {
         // Replace the 'select' of every implementation, so they all send traffic to us:
         proxySelectorClasses.forEach(ProxySelectorCls => {
             if (DEBUG_MODE) {
-                console.debug('Rewriting', ProxySelectorCls.toString());
+                console.log('Rewriting', ProxySelectorCls.toString());
             }
             ProxySelectorCls.select.implementation = () => getTargetProxyList()
         });
 
-        console.log(
-            `Rewrote ${proxySelectorClasses.length} proxy selector classes ` +
-            `to send traffic to ${PROXY_HOST}:${PROXY_PORT}`
-        );
+        console.log(`== Proxy configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
     });
 });

@@ -49,5 +49,5 @@ Java.perform(() => {
     // pinning too! It auto-trusts us in any implementation that uses TrustManagerImpl (Conscrypt) as
     // the underlying cert checking component.
 
-    console.log('System certificate trust injected');
+    console.log('== System certificate trust injected ==');
 });

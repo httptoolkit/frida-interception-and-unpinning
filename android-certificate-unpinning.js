@@ -364,7 +364,7 @@ const getJavaClassIfExists = (clsName) => {
 
 setTimeout(function () {
     Java.perform(function () {
-        if (DEBUG_MODE) console.debug('=== Disablig all recognized unpinning libraries ===');
+        if (DEBUG_MODE) console.log('\n    === Disabling all recognized unpinning libraries ===');
 
         const classesToPatch = Object.keys(PINNING_FIXES);
 
@@ -373,7 +373,7 @@ setTimeout(function () {
             if (!TargetClass) {
                 // We skip patches for any classes that don't seem to be present. This is common
                 // as not all libraries we handle are necessarily used.
-                if (DEBUG_MODE) console.debug(`[ ] ${targetClassName} *`);
+                if (DEBUG_MODE) console.log(`[ ] ${targetClassName} *`);
                 return;
             }
 
@@ -423,7 +423,7 @@ setTimeout(function () {
                 // happen due to methods that only appear in certain library versions or whose signatures
                 // have changed over time.
                 if (targetMethodImplementations.length === 0) {
-                    if (DEBUG_MODE) console.debug(`[ ] ${targetClassName} ${methodDescription}`);
+                    if (DEBUG_MODE) console.log(`[ ] ${targetClassName} ${methodDescription}`);
                     return;
                 }
 
@@ -435,7 +435,7 @@ setTimeout(function () {
                     try {
                         targetMethod.implementation = replacement(targetMethod);
 
-                        if (DEBUG_MODE) console.debug(`[+] ${patchName}`);
+                        if (DEBUG_MODE) console.log(`[+] ${patchName}`);
                         patchApplied = true;
                     } catch (e) {
                         // In theory, errors like this should never happen - it means the patch is broken
@@ -446,7 +446,7 @@ setTimeout(function () {
             });
 
             if (!patchApplied) {
-                console.log(`[!] Matched class ${targetClassName} but could not patch any methods`);
+                console.warn(`[!] Matched class ${targetClassName} but could not patch any methods`);
             }
         });
 
