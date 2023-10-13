@@ -26,24 +26,40 @@ const PINNING_FIXES = {
             methodName: 'init',
             overload: ['[Ljavax.net.ssl.KeyManager;', '[Ljavax.net.ssl.TrustManager;', 'java.security.SecureRandom'],
             replacement: (targetMethod) => {
-                const X509TrustManager = Java.use('javax.net.ssl.X509TrustManager');
+                // Parse the certificate from our CERT_PEM config:
+                const String = Java.use("java.lang.String");
+                const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
+                const CertFactory = Java.use('java.security.cert.CertificateFactory');
 
-                // Implement a custom TrustManager
-                const TrustManager = Java.registerClass({
-                    name: `com.httptoolkit.android.TrustManager`,
-                    implements: [X509TrustManager],
-                    methods: {
-                        checkClientTrusted: function (chain, authType) { },
-                        checkServerTrusted: function (chain, authType) { },
-                        getAcceptedIssuers: function () { return []; }
-                    }
-                });
+                const certFactory = CertFactory.getInstance("X.509");
+                const certBytes = String.$new(CERT_PEM).getBytes();
 
-                const trustManagersOverride = [TrustManager.$new()];
+                // This is the one X509Certificate that we want to trust. No need to trust others (we should capture
+                // _all_ TLS traffic) and risky to trust _everything_ (risks interception between device & proxy, or
+                // worse: some traffic being unintercepted & sent as HTTPS with TLS effectively disabled over the
+                // real web - potentially exposing auth keys, private data and all sorts).
+                const trustedCACert = certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
 
-                // When constructor is called, replace the trust managers argument with our own trust manager:
-                return (keyManager, _providedTrustManagers, secureRandom) => {
-                    return targetMethod.call(this, keyManager, trustManagersOverride, secureRandom);
+                // Build a custom TrustManagerFactory with a KeyStore that trusts only this certificate:
+
+                const KeyStore = Java.use("java.security.KeyStore");
+                const keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+                keyStore.load(null);
+                keyStore.setCertificateEntry("ca", trustedCACert);
+
+                const TrustManagerFactory = Java.use("javax.net.ssl.TrustManagerFactory");
+                const customTrustManagerFactory = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm()
+                );
+                customTrustManagerFactory.init(keyStore);
+
+                // When constructor is called, replace the trust managers argument:
+                return function (keyManager, _providedTrustManagers, secureRandom) {
+                    return targetMethod.call(this,
+                        keyManager,
+                        customTrustManagerFactory.getTrustManagers(), // Override their trust managers
+                        secureRandom
+                    );
                 }
             }
         }
