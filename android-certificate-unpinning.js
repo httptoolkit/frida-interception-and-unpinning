@@ -239,7 +239,12 @@ const PINNING_FIXES = {
         {
             methodName: 'execute',
             overload: ['java.lang.String', 'org.json.JSONArray', 'org.apache.cordova.CallbackContext'],
-            replacement: () => RETURN_TRUE
+            replacement: () => (_action, _args, context) => {
+                context.success("CONNECTION_SECURE");
+                return true;
+            }
+            // This trusts _all_ certs, but that's fine - this is used for checks of independent test
+            // connections, rather than being a primary mechanism to secure the app's TLS connections.
         }
     ],
 
