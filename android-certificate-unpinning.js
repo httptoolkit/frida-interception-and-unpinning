@@ -325,15 +325,6 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Boye AbstractVerifier
-
-    'ch.boye.httpclientandroidlib.conn.ssl.AbstractVerifier': [
-        {
-            methodName: 'verify',
-            replacement: () => NO_OP
-        }
-    ],
-
     // --- Appmattus
 
     'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyInterceptor': [
