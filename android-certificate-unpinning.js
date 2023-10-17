@@ -297,6 +297,23 @@ const PINNING_FIXES = {
         }
     ],
 
+    // --- Cordova / PhoneGap Advanced HTTP Plugin (https://github.com/silkimen/cordova-plugin-advanced-http)
+
+    // Modern version:
+    'com.silkimen.cordovahttp.CordovaServerTrust': [
+        {
+            methodName: '$init',
+            replacement: () => function () {
+                // Ignore any attempts to set trust to 'pinned'. Default settings will trust
+                // our cert because of the separate system-certificate injection step.
+                if (arguments[0] === 'pinned') {
+                    arguments[0] = 'default';
+                }
+                return this.$init(...arguments);
+            }
+        }
+    ],
+
     // --- Apache Cordova WebViewClient
 
     'org.apache.cordova.CordovaWebViewClient': [
