@@ -254,44 +254,26 @@ const PINNING_FIXES = {
         {
             methodName: 'pinTrustedCertificatePublicKey',
             getMethod: (WLClientCls) => WLClientCls.getInstance().pinTrustedCertificatePublicKey,
-            overload: ['java.lang.String'],
-            replacement: () => NO_OP
-        },
-        {
-            methodName: 'pinTrustedCertificatePublicKey',
-            getMethod: (WLClientCls) => WLClientCls.getInstance().pinTrustedCertificatePublicKey,
-            overload: ['[Ljava.lang.String;'],
-            replacement: () => NO_OP
+            overload: '*'
         }
     ],
 
     'com.worklight.wlclient.certificatepinning.HostNameVerifierWithCertificatePinning': [
         {
             methodName: 'verify',
-            overload: ['java.lang.String', 'javax.net.ssl.SSLSocket'],
+            overload: '*',
             replacement: () => NO_OP
-        },
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'java.security.cert.X509Certificate'],
-            replacement: () => NO_OP
-        },
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', '[Ljava.lang.String;', '[Ljava.lang.String;'],
-            replacement: () => NO_OP
-        },
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'javax.net.ssl.SSLSession'],
-            replacement: () => RETURN_TRUE
         }
+        // This covers at least 4 commonly used WorkLight patches. Oddly, most sets of hooks seem
+        // to return true for 1/4 cases, which must be wrong (overloads must all have the same
+        // return type) but also it's very hard to find any modern (since 2017) references to this
+        // class anywhere including WorkLight docs, so it may no longer be relevant anyway.
     ],
 
     'com.worklight.androidgap.plugin.WLCertificatePinningPlugin': [
         {
             methodName: 'execute',
-            overload: ['java.lang.String', 'org.json.JSONArray', 'org.apache.cordova.CallbackContext'],
+            overload: '*',
             replacement: () => RETURN_TRUE
         }
     ],
