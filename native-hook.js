@@ -12,18 +12,6 @@
  * to do proxy config alongside this, primarily to capture traffic that might be sent on any non-standard ports.
  */
 
-// Ports which we recognize, and forcibly redirect to capture, if not captured already.
-const RECOGNIZED_PORTS = [
-    80,
-    443,
-    4443,
-    8000,
-    8080,
-    8443,
-    8888,
-    9000
-];
-
 const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 10));
 const IPv6_MAPPING_PREFIX_BYTES = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff];
 const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_BYTES);
@@ -49,7 +37,7 @@ if (!connectFn) { // Should always be set, but just in case
                 const portAddrBytes = new DataView(addrData.slice(2, 4));
                 const port = portAddrBytes.getUint16(0, false); // Big endian!
 
-                const shouldBeIntercepted = RECOGNIZED_PORTS.includes(port);
+                const shouldBeIntercepted = !IGNORED_NON_HTTP_PORTS.includes(port);
 
                 const isIPv6 = sockType === 'tcp6';
 
@@ -70,7 +58,7 @@ if (!connectFn) { // Should always be set, but just in case
                 if (!shouldBeIntercepted) {
                     // Not intercecpted, sent to unrecognized port - probably not HTTP(S)
                     if (DEBUG_MODE) {
-                        console.debug(`Allowing unintercepted connection to unrecognized port ${port}`);
+                        console.debug(`Allowing unintercepted connection to port ${port}`);
                     }
                     return;
                 }

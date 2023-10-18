@@ -24,6 +24,14 @@ FL11l3fE9xzkPv357Z3e7QULnC8vDRgFAossuh8WBhNjjmo=
 const PROXY_HOST = '127.0.0.1';
 const PROXY_PORT = 8000;
 
+// If you find issues with non-HTTP traffic being captured (due to the
+// native connect hook script) you can add ports here to exempt traffic
+// on that port from being redirected. Note that this will only affect
+// traffic captured by the raw connection hook - for apps using the
+// system HTTP proxy settings, traffic on these ports will still be
+// sent via the proxy and intercepted despite this setting.
+const IGNORED_NON_HTTP_PORTS = [];
+
 // Set to enable extra logging:
 const DEBUG_MODE = false;
 
