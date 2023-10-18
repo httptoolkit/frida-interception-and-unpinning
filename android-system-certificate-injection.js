@@ -27,22 +27,39 @@ Java.perform(() => {
     // by prepopulating all instances, we ensure that all TrustManagerImpls (and potentially other
     // things) automatically trust our certificate specifically (without disabling validation entirely).
     // This should apply to Android v7+ - previous versions used SSLContext & X509TrustManager.
-    const TrustedCertificateIndex = Java.use('com.android.org.conscrypt.TrustedCertificateIndex');
-    TrustedCertificateIndex.$init.overloads.forEach((overload) => {
-        overload.implementation = function () {
-            this.$init(...arguments);
-            // Index our cert as already trusted, right from the start:
-            this.index(cert);
+    [
+        'com.android.org.conscrypt.TrustedCertificateIndex',
+        'org.conscrypt.TrustedCertificateIndex', // Might be used (com.android is synthetic) - unclear
+        'org.apache.harmony.xnet.provider.jsse.TrustedCertificateIndex' // Used in Apache Harmony version of Conscrypt
+    ].forEach((TrustedCertificateIndexClassname, i) => {
+        let TrustedCertificateIndex;
+        try {
+            TrustedCertificateIndex = Java.use(TrustedCertificateIndexClassname);
+        } catch (e) {
+            if (i === 0) {
+                throw new Error(`${TrustedCertificateIndexClassname} not found - could not inject system certificate`);
+            } else {
+                // Other classnames are optional fallbacks
+                return;
+            }
         }
-    });
 
-    TrustedCertificateIndex.reset.overloads.forEach((overload) => {
-        overload.implementation = function () {
-            const result = this.reset(...arguments);
-            // Index our cert in here again, since the reset removes it:
-            this.index(cert);
-            return result;
-        };
+        TrustedCertificateIndex.$init.overloads.forEach((overload) => {
+            overload.implementation = function () {
+                this.$init(...arguments);
+                // Index our cert as already trusted, right from the start:
+                this.index(cert);
+            }
+        });
+
+        TrustedCertificateIndex.reset.overloads.forEach((overload) => {
+            overload.implementation = function () {
+                const result = this.reset(...arguments);
+                // Index our cert in here again, since the reset removes it:
+                this.index(cert);
+                return result;
+            };
+        });
     });
 
     // This effectively adds us to the system certs, and also defeats quite a bit of basic certificate

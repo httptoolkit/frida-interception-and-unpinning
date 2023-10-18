@@ -66,23 +66,6 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Native Conscrypt OpenSSLSocketImpl
-
-    'com.android.org.conscrypt.OpenSSLSocketImpl': [
-        {
-            methodName: 'verifyCertificateChain',
-            replacement: () => NO_OP
-        }
-    ],
-
-    'com.android.org.conscrypt.OpenSSLEngineSocketImpl': [
-        {
-            methodName: 'verifyCertificateChain',
-            overload: ['[Ljava.lang.Long;', 'java.lang.String'],
-            replacement: () => NO_OP
-        }
-    ],
-
     // --- Native Conscrypt CertPinManager
 
     'com.android.org.conscrypt.CertPinManager': [
@@ -230,15 +213,6 @@ const PINNING_FIXES = {
         {
             methodName: 'checkServerTrusted',
             replacement: NO_OP
-        }
-    ],
-
-    // --- Apache Harmony version of OpenSSLSocketImpl (v similar to Conscrypt above)
-
-    'org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl': [
-        {
-            methodName: 'verifyCertificateChain',
-            replacement: () => NO_OP
         }
     ],
 
