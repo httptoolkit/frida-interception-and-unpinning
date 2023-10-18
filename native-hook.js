@@ -102,7 +102,11 @@ if (!connectFn) { // Should always be set, but just in case
         }
     });
 
-    console.log(`Hooked connect() at ${connectFn}`);
+    console.log(`== Redirecting ${
+        IGNORED_NON_HTTP_PORTS.length === 0
+        ? 'all'
+        : 'all unrecognized'
+    } TCP connections to ${PROXY_HOST}:${PROXY_PORT} ==`);
 }
 
 const areArraysEqual = (arrayA, arrayB) => {
