@@ -368,94 +368,92 @@ const getJavaClassIfExists = (clsName) => {
     }
 }
 
-setTimeout(function () {
-    Java.perform(function () {
-        if (DEBUG_MODE) console.log('\n    === Disabling all recognized unpinning libraries ===');
+Java.perform(function () {
+    if (DEBUG_MODE) console.log('\n    === Disabling all recognized unpinning libraries ===');
 
-        const classesToPatch = Object.keys(PINNING_FIXES);
+    const classesToPatch = Object.keys(PINNING_FIXES);
 
-        classesToPatch.forEach((targetClassName) => {
-            const TargetClass = getJavaClassIfExists(targetClassName);
-            if (!TargetClass) {
-                // We skip patches for any classes that don't seem to be present. This is common
-                // as not all libraries we handle are necessarily used.
-                if (DEBUG_MODE) console.log(`[ ] ${targetClassName} *`);
+    classesToPatch.forEach((targetClassName) => {
+        const TargetClass = getJavaClassIfExists(targetClassName);
+        if (!TargetClass) {
+            // We skip patches for any classes that don't seem to be present. This is common
+            // as not all libraries we handle are necessarily used.
+            if (DEBUG_MODE) console.log(`[ ] ${targetClassName} *`);
+            return;
+        }
+
+        const patches = PINNING_FIXES[targetClassName];
+
+        let patchApplied = false;
+
+        patches.forEach(({ methodName, getMethod, overload, replacement }) => {
+            const namedTargetMethod = getMethod
+                ? getMethod(TargetClass)
+                : TargetClass[methodName];
+
+            const methodDescription = `${methodName}${
+                overload === '*'
+                    ? '(*)'
+                : overload
+                    ? '(' + overload.map((argType) => {
+                        // Simplify arg names to just the class name for simpler logs:
+                        const argClassName = argType.split('.').slice(-1)[0];
+                        if (argType.startsWith('[L')) return `${argClassName}[]`;
+                        else return argClassName;
+                    }).join(', ') + ')'
+                // No overload:
+                    : ''
+            }`
+
+            let targetMethodImplementations = [];
+            try {
+                if (namedTargetMethod) {
+                    if (!overload) {
+                            // No overload specified
+                        targetMethodImplementations = [namedTargetMethod];
+                    } else if (overload === '*') {
+                        // Targetting _all_ overloads
+                        targetMethodImplementations = namedTargetMethod.overloads;
+                    } else {
+                        // Or targetting a specific overload:
+                        targetMethodImplementations = [namedTargetMethod.overload(...overload)];
+                    }
+                }
+            } catch (e) {
+                // Overload not present
+            }
+
+
+            // We skip patches for any methods that don't seem to be present. This is rarer, but does
+            // happen due to methods that only appear in certain library versions or whose signatures
+            // have changed over time.
+            if (targetMethodImplementations.length === 0) {
+                if (DEBUG_MODE) console.log(`[ ] ${targetClassName} ${methodDescription}`);
                 return;
             }
 
-            const patches = PINNING_FIXES[targetClassName];
+            targetMethodImplementations.forEach((targetMethod, i) => {
+                const patchName = `${targetClassName} ${methodDescription}${
+                    targetMethodImplementations.length > 1 ? ` (${i})` : ''
+                }`;
 
-            let patchApplied = false;
-
-            patches.forEach(({ methodName, getMethod, overload, replacement }) => {
-                const namedTargetMethod = getMethod
-                    ? getMethod(TargetClass)
-                    : TargetClass[methodName];
-
-                const methodDescription = `${methodName}${
-                    overload === '*'
-                        ? '(*)'
-                    : overload
-                        ? '(' + overload.map((argType) => {
-                            // Simplify arg names to just the class name for simpler logs:
-                            const argClassName = argType.split('.').slice(-1)[0];
-                            if (argType.startsWith('[L')) return `${argClassName}[]`;
-                            else return argClassName;
-                        }).join(', ') + ')'
-                    // No overload:
-                        : ''
-                }`
-
-                let targetMethodImplementations = [];
                 try {
-                    if (namedTargetMethod) {
-                        if (!overload) {
-                             // No overload specified
-                            targetMethodImplementations = [namedTargetMethod];
-                        } else if (overload === '*') {
-                            // Targetting _all_ overloads
-                            targetMethodImplementations = namedTargetMethod.overloads;
-                        } else {
-                            // Or targetting a specific overload:
-                            targetMethodImplementations = [namedTargetMethod.overload(...overload)];
-                        }
-                    }
+                    targetMethod.implementation = replacement(targetMethod);
+
+                    if (DEBUG_MODE) console.log(`[+] ${patchName}`);
+                    patchApplied = true;
                 } catch (e) {
-                    // Overload not present
+                    // In theory, errors like this should never happen - it means the patch is broken
+                    // (e.g. some dynamic patch building fails completely)
+                    console.error(`[!] ERROR: ${patchName} failed: ${e}`);
                 }
-
-
-                // We skip patches for any methods that don't seem to be present. This is rarer, but does
-                // happen due to methods that only appear in certain library versions or whose signatures
-                // have changed over time.
-                if (targetMethodImplementations.length === 0) {
-                    if (DEBUG_MODE) console.log(`[ ] ${targetClassName} ${methodDescription}`);
-                    return;
-                }
-
-                targetMethodImplementations.forEach((targetMethod, i) => {
-                    const patchName = `${targetClassName} ${methodDescription}${
-                        targetMethodImplementations.length > 1 ? ` (${i})` : ''
-                    }`;
-
-                    try {
-                        targetMethod.implementation = replacement(targetMethod);
-
-                        if (DEBUG_MODE) console.log(`[+] ${patchName}`);
-                        patchApplied = true;
-                    } catch (e) {
-                        // In theory, errors like this should never happen - it means the patch is broken
-                        // (e.g. some dynamic patch building fails completely)
-                        console.error(`[!] ERROR: ${patchName} failed: ${e}`);
-                    }
-                })
-            });
-
-            if (!patchApplied) {
-                console.warn(`[!] Matched class ${targetClassName} but could not patch any methods`);
-            }
+            })
         });
 
-        console.log('== Certificate unpinning completed ==');
+        if (!patchApplied) {
+            console.warn(`[!] Matched class ${targetClassName} but could not patch any methods`);
+        }
     });
+
+    console.log('== Certificate unpinning completed ==');
 });
