@@ -1,15 +1,16 @@
 /**
  * In some cases, proxy configuration by itself won't work. This notably includes Flutter apps (which ignore
  * system/JVM configuration entirely) and plausibly other apps intentionally ignoring proxies. To handle that
- * we hook libc's connect() directly to redirect traffic on all recognized ports.
+ * we hook native connect() calls directly, to redirect traffic on all ports to the target.
  *
- * This handles all calls to connect an outgoing socket, and for all TCP connections opened on recognized ports,
- * it will manually replace the connect parameters, so that the socket connects to the proxy instead of the
+ * This handles all attempts to connect an outgoing socket, and for all TCP connections opened it will
+ * manually replace the connect() parameters so that the socket connects to the proxy instead of the
  * 'real' destination.
  *
  * This doesn't help with certificate trust (you still need some kind of certificate setup) but it does ensure
  * the proxy receives all connections (and so will see if connections don't trust its CA). It's still useful
- * to do proxy config alongside this, primarily to capture traffic that might be sent on any non-standard ports.
+ * to do proxy config alongside this, as applications may behave a little more 'correctly' if they're aware
+ * they're using a proxy rather than doing so unknowingly.
  */
 
 const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 10));
