@@ -425,7 +425,16 @@ Java.perform(function () {
                 }`;
 
                 try {
-                    targetMethod.implementation = replacement(targetMethod);
+                    const newImplementation = replacement(targetMethod);
+                    if (DEBUG_MODE) {
+                        // Log each hooked method as it's called:
+                        targetMethod.implementation = function () {
+                            console.log(` => ${patchName}`);
+                            return newImplementation.apply(this, arguments);
+                        }
+                    } else {
+                        targetMethod.implementation = newImplementation;
+                    }
 
                     if (DEBUG_MODE) console.log(`[+] ${patchName}`);
                     patchApplied = true;

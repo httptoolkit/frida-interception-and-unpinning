@@ -96,19 +96,20 @@ if (!connectFn) { // Should always be set, but just in case
                     addrPtr.add(4).writeByteArray(PROXY_HOST_IPv4_BYTES);
                 }
             } else if (DEBUG_MODE) {
-                console.debug(`Ignoring ${sockType} connection`);
+                console.log(`Ignoring ${sockType} connection`);
+                this.ignored = true;
             }
 
             // N.b. we ignore all non-TCP connections: both UDP and Unix streams
         },
         onLeave: function (result) {
-            if (!DEBUG_MODE) return;
+            if (!DEBUG_MODE || this.ignored) return;
 
             const fd = this.sockFd;
             const sockType = Socket.type(fd);
             const address = Socket.peerAddress(fd);
             console.debug(
-                `Connected fd ${fd} of type ${sockType} to ${JSON.stringify(address)} (${result.toInt32()})`
+                `Connected ${sockType} fd ${fd} to ${JSON.stringify(address)} (${result.toInt32()})`
             );
         }
     });
