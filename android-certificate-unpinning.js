@@ -66,19 +66,6 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Native TrustManagerImpl
-
-    'com.android.org.conscrypt.TrustManagerImpl': [
-        {
-            methodName: 'checkTrustedRecursive',
-            replacement: () => () => Java.use('java.util.ArrayList').$new()
-        },
-        {
-            methodName: 'verifyChain',
-            replacement: () => (untrustedChain) => untrustedChain
-        }
-    ],
-
     // --- Native Conscrypt OpenSSLSocketImpl
 
     'com.android.org.conscrypt.OpenSSLSocketImpl': [
