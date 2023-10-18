@@ -26,4 +26,15 @@ const PROXY_PORT = 8000;
 
 // Set to enable extra logging:
 const DEBUG_MODE = false;
-console.log(''); // Add a new line just for clean output & to separate reloads
+
+if (DEBUG_MODE) {
+    // Add logging just for clean output & to separate reloads:
+    console.log('\n*** Starting scripts ***');
+    Java.perform(() => {
+        setTimeout(() => console.log('*** Scripts completed ***\n'), 5);
+        // (We assume that nothing else will take more than 5ms, but app startup
+        // probably will, so this should separate script & runtime logs)
+    });
+} else {
+    console.log(''); // Add just a single newline, for minimal clarity
+}
