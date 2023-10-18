@@ -287,12 +287,12 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- // CWAC-Netsecurity (unofficial back-port pinner for Android<4.2) CertPinManager
+    // --- CWAC-Netsecurity (unofficial back-port pinner for Android<4.2) CertPinManager
 
     'com.commonsware.cwac.netsecurity.conscrypt.CertPinManager': [
         {
             methodName: 'isChainValid',
-            overload: ['java.lang.String', 'java.util.List'],
+            overload: '*',
             replacement: () => RETURN_TRUE
         }
     ],
