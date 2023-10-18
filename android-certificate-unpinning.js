@@ -1,6 +1,13 @@
 const NO_OP = () => {};
 const RETURN_TRUE = () => true;
 
+function buildX509CertificateFromBytes(certBytes) {
+    const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
+    const CertFactory = Java.use('java.security.cert.CertificateFactory');
+    const certFactory = CertFactory.getInstance("X.509");
+    return certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
+}
+
 const PINNING_FIXES = {
     // --- Native HttpsURLConnection
 
@@ -26,19 +33,13 @@ const PINNING_FIXES = {
             methodName: 'init',
             overload: ['[Ljavax.net.ssl.KeyManager;', '[Ljavax.net.ssl.TrustManager;', 'java.security.SecureRandom'],
             replacement: (targetMethod) => {
-                // Parse the certificate from our CERT_PEM config:
-                const String = Java.use("java.lang.String");
-                const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
-                const CertFactory = Java.use('java.security.cert.CertificateFactory');
-
-                const certFactory = CertFactory.getInstance("X.509");
-                const certBytes = String.$new(CERT_PEM).getBytes();
 
                 // This is the one X509Certificate that we want to trust. No need to trust others (we should capture
                 // _all_ TLS traffic) and risky to trust _everything_ (risks interception between device & proxy, or
                 // worse: some traffic being unintercepted & sent as HTTPS with TLS effectively disabled over the
                 // real web - potentially exposing auth keys, private data and all sorts).
-                const trustedCACert = certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
+                const certBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
+                const trustedCACert = buildX509CertificateFromBytes(certBytes);
 
                 // Build a custom TrustManagerFactory with a KeyStore that trusts only this certificate:
 
@@ -128,17 +129,38 @@ const PINNING_FIXES = {
 
     // --- Native WebViewClient
 
-    'android.webkit.WebViewClient':  [
+    'android.webkit.WebViewClient': [
+        // Here, we watch for all SSL errors (so any connections that fail default validation) and add our
+        // own check that explicitly allows our one trusted CA, but nothing else:
         {
             methodName: 'onReceivedSslError',
             overload: ['android.webkit.WebView', 'android.webkit.SslErrorHandler', 'android.net.http.SslError'],
-            replacement: () => NO_OP
-        },
-        {
-            methodName: 'onReceivedSslError',
-            overload: ['android.webkit.WebView', 'android.webkit.WebResourceRequest', 'android.webkit.WebResourceError'],
-            replacement: () => NO_OP
+            replacement: () => (_wv, handler, sslError) => {
+                try {
+                    // Get an x509 cert from the error:
+                    const serverRawCert = sslError.getCertificate();
+                    const serverCertBytes = Java.use("android.net.http.SslCertificate")
+                        .saveState(serverRawCert)
+                        .getByteArray("x509-certificate");
+                    if (!serverCertBytes) throw new Error("Couldn't parse server X509 certificate");
+                    const serverCert = buildX509CertificateFromBytes(serverCertBytes);
+
+                    // Get our own trusted CA cert from config:
+                    const trustedCertBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
+                    const trustedCACert = buildX509CertificateFromBytes(trustedCertBytes);
+
+                    // Check the server cert is signed by our CA:
+                    serverCert.verify(trustedCACert.getPublicKey()); // Throws on error
+                    handler.proceed();
+                } catch (e) {
+                    console.error("WebView hook failed:", e);
+                    handler.cancel();
+                }
+            }
         }
+        // WebView are also often pinned by overriding shouldInterceptRequest, and then doing manual
+        // HTTPS there. That's not covered here - we assume that any pinning in that method will
+        // be covered by one of the other patches.
     ],
 
     // --- OkHttp v3
@@ -311,17 +333,6 @@ const PINNING_FIXES = {
                 }
                 return this.$init(...arguments);
             }
-        }
-    ],
-
-    // --- Apache Cordova WebViewClient
-
-    'org.apache.cordova.CordovaWebViewClient': [
-        // Very similar to native Android WebViewClient
-        {
-            methodName: 'onReceivedSslError',
-            overload: ['android.webkit.WebView', 'android.webkit.SslErrorHandler', 'android.net.http.SslError'],
-            replacement: () => (a, b, c) => c.proceed()
         }
     ],
 

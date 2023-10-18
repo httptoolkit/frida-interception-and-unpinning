@@ -15,11 +15,48 @@
 
 setTimeout(() => {
     Java.perform(() => {
-        // Set default JVM system properties for the proxy address:
+        // Set default JVM system properties for the proxy address. Notably these are used
+        // to initialize WebView configuration.
         Java.use('java.lang.System').setProperty('http.proxyHost', PROXY_HOST);
         Java.use('java.lang.System').setProperty('http.proxyPort', PROXY_PORT.toString());
         Java.use('java.lang.System').setProperty('https.proxyHost', PROXY_HOST);
         Java.use('java.lang.System').setProperty('https.proxyPort', PROXY_PORT.toString());
+
+        Java.use('java.lang.System').clearProperty('http.nonProxyHosts');
+        Java.use('java.lang.System').clearProperty('https.nonProxyHosts');
+
+        // Some Android internals attempt to reset these settings to match the device configuration.
+        // We block that directly here:
+        const controlledSystemProperties = [
+            'http.proxyHost',
+            'http.proxyPort',
+            'https.proxyHost',
+            'https.proxyPort',
+            'http.nonProxyHosts',
+            'https.nonProxyHosts'
+        ];
+        Java.use('java.lang.System').clearProperty.implementation = function (property) {
+            if (controlledSystemProperties.includes(property)) {
+                if (DEBUG_MODE) console.log(`Ignoring attempt to clear ${property} system property`);
+                return this.getProperty(property);
+            }
+            return this.clearProperty(...arguments);
+        }
+        Java.use('java.lang.System').setProperty.implementation = function (property) {
+            if (controlledSystemProperties.includes(property)) {
+                if (DEBUG_MODE) console.log(`Ignoring attempt to override ${property} system property`);
+                return this.getProperty(property);
+            }
+            return this.setProperty(...arguments);
+        }
+
+        // Configure the app's proxy directly, via the app connectivity manager service:
+        const ConnectivityManager = Java.use('android.net.ConnectivityManager');
+        const ProxyInfo = Java.use('android.net.ProxyInfo');
+        ConnectivityManager.getDefaultProxy.implementation = () => ProxyInfo.$new(PROXY_HOST, PROXY_PORT, '');
+        // (Not clear if this works 100% - implying there are ConnectivityManager subclasses handling this)
+
+        console.log(`== Proxy system configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
 
         // Configure the proxy indirectly, by overriding the return value for all ProxySelectors everywhere:
         const Collections = Java.use('java.util.Collections');
