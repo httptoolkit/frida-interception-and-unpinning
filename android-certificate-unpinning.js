@@ -162,33 +162,7 @@ const PINNING_FIXES = {
         }
     ],
 
-    'com.squareup.okhttp.internal.tls.OkHostnameVerifier': [
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'java.security.cert.X509Certificate'],
-            replacement: () => RETURN_TRUE
-        },
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'javax.net.ssl.SSLSession'],
-            replacement: () => RETURN_TRUE
-        }
-    ],
-
     // --- Trustkit (https://github.com/datatheorem/TrustKit-Android/)
-
-    'com.datatheorem.android.trustkit.pinning.OkHostnameVerifier': [
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'javax.net.ssl.SSLSession'],
-            replacement: () => RETURN_TRUE
-        },
-        {
-            methodName: 'verify',
-            overload: ['java.lang.String', 'java.security.cert.X509Certificate'],
-            replacement: () => RETURN_TRUE
-        }
-    ],
 
     'com.datatheorem.android.trustkit.pinning.PinningTrustManager': [
         {
