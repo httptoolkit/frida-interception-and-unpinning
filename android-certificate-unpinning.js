@@ -1,12 +1,57 @@
-const NO_OP = () => {};
-const RETURN_TRUE = () => true;
-
 function buildX509CertificateFromBytes(certBytes) {
     const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
     const CertFactory = Java.use('java.security.cert.CertificateFactory');
     const certFactory = CertFactory.getInstance("X.509");
     return certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
 }
+
+function getCustomTrustManagerFactory() {
+    // This is the one X509Certificate that we want to trust. No need to trust others (we should capture
+    // _all_ TLS traffic) and risky to trust _everything_ (risks interception between device & proxy, or
+    // worse: some traffic being unintercepted & sent as HTTPS with TLS effectively disabled over the
+    // real web - potentially exposing auth keys, private data and all sorts).
+    const certBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
+    const trustedCACert = buildX509CertificateFromBytes(certBytes);
+
+    // Build a custom TrustManagerFactory with a KeyStore that trusts only this certificate:
+
+    const KeyStore = Java.use("java.security.KeyStore");
+    const keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+    keyStore.load(null);
+    keyStore.setCertificateEntry("ca", trustedCACert);
+
+    const TrustManagerFactory = Java.use("javax.net.ssl.TrustManagerFactory");
+    const customTrustManagerFactory = TrustManagerFactory.getInstance(
+        TrustManagerFactory.getDefaultAlgorithm()
+    );
+    customTrustManagerFactory.init(keyStore);
+
+    return customTrustManagerFactory;
+}
+
+function getCustomX509TrustManager() {
+    const customTrustManagerFactory = getCustomTrustManagerFactory();
+    const trustManagers = customTrustManagerFactory.getTrustManagers();
+
+    const X509TrustManager = Java.use('javax.net.ssl.X509TrustManager');
+
+    const x509TrustManager = trustManagers.find((trustManager) => {
+        return trustManager.class.isAssignableFrom(X509TrustManager.class);
+    });
+
+    // We have to cast it explicitly before Frida will allow us to use the X509 methods:
+    return Java.cast(x509TrustManager, X509TrustManager);
+}
+
+// Some standard hook replacements for various cases:
+const NO_OP = () => {};
+const RETURN_TRUE = () => true;
+const CHECK_OUR_TRUST_MANAGER_ONLY = () => {
+    const trustManager = getCustomX509TrustManager();
+    return (certs, authType) => {
+        trustManager.checkServerTrusted(certs, authType);
+    };
+};
 
 const PINNING_FIXES = {
     // --- Native HttpsURLConnection
@@ -33,26 +78,7 @@ const PINNING_FIXES = {
             methodName: 'init',
             overload: ['[Ljavax.net.ssl.KeyManager;', '[Ljavax.net.ssl.TrustManager;', 'java.security.SecureRandom'],
             replacement: (targetMethod) => {
-
-                // This is the one X509Certificate that we want to trust. No need to trust others (we should capture
-                // _all_ TLS traffic) and risky to trust _everything_ (risks interception between device & proxy, or
-                // worse: some traffic being unintercepted & sent as HTTPS with TLS effectively disabled over the
-                // real web - potentially exposing auth keys, private data and all sorts).
-                const certBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
-                const trustedCACert = buildX509CertificateFromBytes(certBytes);
-
-                // Build a custom TrustManagerFactory with a KeyStore that trusts only this certificate:
-
-                const KeyStore = Java.use("java.security.KeyStore");
-                const keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-                keyStore.load(null);
-                keyStore.setCertificateEntry("ca", trustedCACert);
-
-                const TrustManagerFactory = Java.use("javax.net.ssl.TrustManagerFactory");
-                const customTrustManagerFactory = TrustManagerFactory.getInstance(
-                    TrustManagerFactory.getDefaultAlgorithm()
-                );
-                customTrustManagerFactory.init(keyStore);
+                const customTrustManagerFactory = getCustomTrustManagerFactory();
 
                 // When constructor is called, replace the trust managers argument:
                 return function (keyManager, _providedTrustManagers, secureRandom) {
@@ -185,7 +211,7 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Trustkit
+    // --- Trustkit (https://github.com/datatheorem/TrustKit-Android/)
 
     'com.datatheorem.android.trustkit.pinning.OkHostnameVerifier': [
         {
@@ -203,16 +229,16 @@ const PINNING_FIXES = {
     'com.datatheorem.android.trustkit.pinning.PinningTrustManager': [
         {
             methodName: 'checkServerTrusted',
-            replacement: () => NO_OP
+            replacement: CHECK_OUR_TRUST_MANAGER_ONLY
         }
     ],
 
-    // --- Appcelerator
+    // --- Appcelerator (https://github.com/tidev/appcelerator.https)
 
     'appcelerator.https.PinningTrustManager': [
         {
             methodName: 'checkServerTrusted',
-            replacement: NO_OP
+            replacement: CHECK_OUR_TRUST_MANAGER_ONLY
         }
     ],
 
@@ -297,12 +323,21 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Appmattus
+    // --- Appmattus Cert Transparency (https://github.com/appmattus/certificatetransparency/)
+
+    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyHostnameVerifier': [
+        {
+            methodName: 'verify',
+            replacement: () => RETURN_TRUE
+            // This is not called unless the cert passes basic trust checks, so it's safe to blindly accept.
+        }
+    ],
 
     'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyInterceptor': [
         {
             methodName: 'intercept',
             replacement: () => (a) => a.proceed(a.request())
+            // This is not called unless the cert passes basic trust checks, so it's safe to blindly accept.
         }
     ],
 
@@ -310,12 +345,18 @@ const PINNING_FIXES = {
         {
             methodName: 'checkServerTrusted',
             overload: ['[Ljava.security.cert.X509Certificate;', 'java.lang.String'],
-            replacement: () => NO_OP
-        },
-        {
+            replacement: CHECK_OUR_TRUST_MANAGER_ONLY,
             methodName: 'checkServerTrusted',
             overload: ['[Ljava.security.cert.X509Certificate;', 'java.lang.String', 'java.lang.String'],
-            replacement: () => () => Java.use('java.util.ArrayList').$new()
+            replacement: () => {
+                const trustManager = getCustomX509TrustManager();
+                return (certs, authType, _hostname) => {
+                    // We ignore the hostname - if the certs are good (i.e they're ours), then the
+                    // whole chain is good to go.
+                    trustManager.checkServerTrusted(certs, authType);
+                    return Java.use('java.util.Arrays').asList(certs);
+                };
+            }
         }
     ]
 
