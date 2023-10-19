@@ -123,42 +123,6 @@ const PINNING_FIXES = {
         }
     ],
 
-    // --- Native WebViewClient
-
-    'android.webkit.WebViewClient': [
-        // Here, we watch for all SSL errors (so any connections that fail default validation) and add our
-        // own check that explicitly allows our one trusted CA, but nothing else:
-        {
-            methodName: 'onReceivedSslError',
-            overload: ['android.webkit.WebView', 'android.webkit.SslErrorHandler', 'android.net.http.SslError'],
-            replacement: () => (_wv, handler, sslError) => {
-                try {
-                    // Get an x509 cert from the error:
-                    const serverRawCert = sslError.getCertificate();
-                    const serverCertBytes = Java.use("android.net.http.SslCertificate")
-                        .saveState(serverRawCert)
-                        .getByteArray("x509-certificate");
-                    if (!serverCertBytes) throw new Error("Couldn't parse server X509 certificate");
-                    const serverCert = buildX509CertificateFromBytes(serverCertBytes);
-
-                    // Get our own trusted CA cert from config:
-                    const trustedCertBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
-                    const trustedCACert = buildX509CertificateFromBytes(trustedCertBytes);
-
-                    // Check the server cert is signed by our CA:
-                    serverCert.verify(trustedCACert.getPublicKey()); // Throws on error
-                    handler.proceed();
-                } catch (e) {
-                    console.error("WebView hook failed:", e);
-                    handler.cancel();
-                }
-            }
-        }
-        // WebView are also often pinned by overriding shouldInterceptRequest, and then doing manual
-        // HTTPS there. That's not covered here - we assume that any pinning in that method will
-        // be covered by one of the other patches.
-    ],
-
     // --- OkHttp v3
 
     'okhttp3.CertificatePinner': [
