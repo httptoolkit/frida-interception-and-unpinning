@@ -65,16 +65,10 @@ Java.perform(function () {
             // To do that, we effectively pattern match our way through all the
             // related types to work out what's what:
 
-            console.log('checking chain types...');
-
             const chainType = Java.use(method.argumentTypes[0].className);
             const responseTypeName = method.returnType.className;
 
-            console.log('got chain response type', responseTypeName);
-
             const matchedChain = matchOkHttpChain(chainType, responseTypeName);
-
-            console.log('matchedChain', matchedChain);
             return !!matchedChain;
         };
 
@@ -85,8 +79,6 @@ Java.perform(function () {
                 method.returnType.className === expectedReturnTypeName
             );
             if (matchingMethods.length !== 1) return;
-
-            console.log('got chain proceed method');
 
             const [proceedMethodName, proceedMethod] = matchingMethods[0];
             if (proceedMethod.argumentTypes.length !== 1) return;
@@ -100,8 +92,6 @@ Java.perform(function () {
                 field.fieldReturnType?.className === argumentTypeName
             );
             if (matchingFields.length !== 1) return;
-
-            console.log('got chain request field');
 
             const [requestFieldName] = matchingFields[0];
 

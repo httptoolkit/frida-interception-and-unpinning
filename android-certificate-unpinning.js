@@ -123,6 +123,30 @@ const PINNING_FIXES = {
         }
     ],
 
+    // --- Native HostnameVerification override (n.b. Android contains its own vendored OkHttp v2!)
+
+    'com.android.okhttp.Address': [
+        {
+            methodName: '$init',
+            replacement: () => {
+                const OkHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier");
+                const defaultHostnameVerifier = OkHostnameVerifier.INSTANCE.value;
+
+                const CertPinner = Java.use("com.android.okhttp.CertificatePinner");
+                const defaultCertPinner = CertPinner.DEFAULT.value;
+
+                return function () {
+                    // Override arguments, to swap any custom check params (widely used
+                    // to add stricter rules to TLS verification) with the defaults instead:
+                    arguments[5] = defaultHostnameVerifier;
+                    arguments[6] = defaultCertPinner;
+
+                    this.$init(...arguments);
+                }
+            }
+        }
+    ],
+
     // --- OkHttp v3
 
     'okhttp3.CertificatePinner': [
