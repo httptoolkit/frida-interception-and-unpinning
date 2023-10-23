@@ -22,7 +22,7 @@ jobs:
             ./android/android-certificate-unpinning-fallback.js \
             > ./build/android-frida-interception-script.js
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: android-frida-interception-script.js
           path: ./build/android-frida-interception-script.js
