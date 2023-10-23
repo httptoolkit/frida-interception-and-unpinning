@@ -17,6 +17,10 @@
  * For more details on what was matched, and log output when each hooked method is actually used,
  * enable DEBUG_MODE in config.js, and watch the Frida output after running this script.
  *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ *
  *************************************************************************************************/
 
 function buildX509CertificateFromBytes(certBytes) {

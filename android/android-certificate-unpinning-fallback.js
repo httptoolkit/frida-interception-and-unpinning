@@ -18,6 +18,10 @@
  * reverse engineering. If this does fail and cause problems, you may want to skip this script
  * and use only the known-good patches provided elsewhere.
  *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ *
  *************************************************************************************************/
 
 // Capture the full fields or methods from a Frida class reference via JVM reflection:

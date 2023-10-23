@@ -1,10 +1,14 @@
-/******************************************************************************
+/**************************************************************************************************
  *
- * This file defines various config parameters, used later within the other
- * scripts. In all cases, you'll want to set CERT_PEM and likely
- * PROXY_HOST and PROXY_PORT.
+ * This file defines various config parameters, used later within the other scripts.
  *
- *****************************************************************************/
+ * In all cases, you'll want to set CERT_PEM and likely PROXY_HOST and PROXY_PORT.
+ *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ *
+ *************************************************************************************************/
 
 // Local testing certificate for now
 const CERT_PEM = `-----BEGIN CERTIFICATE-----

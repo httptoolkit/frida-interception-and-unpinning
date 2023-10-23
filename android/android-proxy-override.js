@@ -13,6 +13,10 @@
  * To handle those less tidy cases, we manually capture traffic to recognized target ports
  * in the native connect() hook script.
  *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ *
  *************************************************************************************************/
 
 Java.perform(() => {
