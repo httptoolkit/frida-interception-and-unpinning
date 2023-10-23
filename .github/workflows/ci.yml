@@ -32,7 +32,16 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         with:
-          asset_name: android-frida-interception-script.js
+          body: |
+            The pre-combined scripts for the ${{ github.ref_name }} release.
+
+            This contains the same content as the repo, but pre-combined into a single
+            script for convenient usage.
+
+            This script still requires configuration: you'll need to provide the
+            `CERT_PEM` and typically `PROXY_HOST` and `PROXY_PORT` variables in the
+            first section of the file.
+          asset_name: android-frida-interception-script-${{ github.ref }}.js
           file: ./build/android-frida-interception-script.js
           tag: ${{ github.ref }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
