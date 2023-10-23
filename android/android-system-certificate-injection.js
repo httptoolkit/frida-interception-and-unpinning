@@ -1,4 +1,5 @@
-/**
+/**************************************************************************************************
+ *
  * Once we have captured traffic (once it's being sent to our proxy port) the next step is
  * to ensure any clients using TLS (HTTPS) trust our CA certificate, to allow us to intercept
  * encrypted connections successfully.
@@ -11,7 +12,8 @@
  * This does not handle all standalone certificate pinning techniques - where the application
  * actively rejects certificates that are trusted by default on the system. That's dealt with
  * in the separate certificate unpinning script.
- */
+ *
+ *************************************************************************************************/
 
 Java.perform(() => {
     // First, we build a JVM representation of our certificate:

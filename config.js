@@ -1,3 +1,11 @@
+/******************************************************************************
+ *
+ * This file defines various config parameters, used later within the other
+ * scripts. In all cases, you'll want to set CERT_PEM and likely
+ * PROXY_HOST and PROXY_PORT.
+ *
+ *****************************************************************************/
+
 // Local testing certificate for now
 const CERT_PEM = `-----BEGIN CERTIFICATE-----
 MIIDTzCCAjegAwIBAgIRClDpdJeylUmDvNyq5qq+plcwDQYJKoZIhvcNAQELBQAw

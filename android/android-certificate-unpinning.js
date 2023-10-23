@@ -1,3 +1,24 @@
+/**************************************************************************************************
+ *
+ * This script defines a large set of targeted certificate unpinning hooks: matching specific
+ * methods in certain classes, and transforming their behaviour to ensure that restrictions to
+ * TLS trust are disabled.
+ *
+ * This does not disable TLS protections completely - each hook is designed to disable only
+ * *additional* restrictions, and to explicitly trust the certificate provided as CERT_PEM in the
+ * config.js configuration file, preserving normal TLS protections wherever possible, even while
+ * allowing for controlled MitM of local traffic.
+ *
+ * The file consists of a few general-purpose methods, then a data structure declaratively
+ * defining the classes & methods to match, and how to transform them, and then logic at the end
+ * which uses this data structure, applying the transformation for each found match to the
+ * target process.
+ *
+ * For more details on what was matched, and log output when each hooked method is actually used,
+ * enable DEBUG_MODE in config.js, and watch the Frida output after running this script.
+ *
+ *************************************************************************************************/
+
 function buildX509CertificateFromBytes(certBytes) {
     const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
     const CertFactory = Java.use('java.security.cert.CertificateFactory');

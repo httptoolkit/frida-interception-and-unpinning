@@ -1,4 +1,5 @@
-/**
+/**************************************************************************************************
+ *
  * The first step in intercepting HTTP & HTTPS traffic is to set the default proxy settings,
  * telling the app that all requests should be sent via our HTTP proxy.
  *
@@ -11,7 +12,8 @@
  * with a framework that does not do this by default (Flutter is notably in this category).
  * To handle those less tidy cases, we manually capture traffic to recognized target ports
  * in the native connect() hook script.
- */
+ *
+ *************************************************************************************************/
 
 Java.perform(() => {
     // Set default JVM system properties for the proxy address. Notably these are used

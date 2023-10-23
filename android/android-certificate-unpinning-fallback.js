@@ -1,22 +1,24 @@
-/**
- * Once we've set up the configuration and certificate, and then disabled all the
- * pinning techniques we're aware of, we add one last touch: a fallback hook,
- * designed to spot and handle unknown unknowns.
+/**************************************************************************************************
  *
- * This can also be useful for heavily obfuscated apps, where 3rd party libraries
- * are obfuscated sufficiently that our hooks no longer recognize the methods we
- * care about.
+ * Once we've set up the configuration and certificate, and then disabled all the pinning
+ * techniques we're aware of, we add one last touch: a fallback hook, designed to spot and handle
+ * unknown unknowns.
  *
- * To handle this, we watch for methods that throw known built-in TLS errors
- * (these are _very_ widely used, and always recognizable as they're defined natively),
- * and then subsequently patch them for all future calls. Whenever a method throws
- * this, we attempt to recognize it from signatures alone, and automatically hook it.
+ * This can also be useful for heavily obfuscated apps, where 3rd party libraries are obfuscated
+ * sufficiently that our hooks no longer recognize the methods we care about.
  *
- * These are very much a fallback! They might not work! They almost certainly won't
- * work on the first request, so applications will see at least one failure.
- * Even when they fail though, they will at least log the method that's failing, so
- * this works well as a starting point for manual reverse engineering.
- */
+ * To handle this, we watch for methods that throw known built-in TLS errors (these are *very*
+ * widely used, and always recognizable as they're defined natively), and then subsequently patch
+ * them for all future calls. Whenever a method throws this, we attempt to recognize it from
+ * signatures alone, and automatically hook it.
+ *
+ * These are very much a fallback! They might not work! They almost certainly won't work on the
+ * first request, so applications will see at least one failure. Even when they fail though, they
+ * will at least log the method that's failing, so this works well as a starting point for manual
+ * reverse engineering. If this does fail and cause problems, you may want to skip this script
+ * and use only the known-good patches provided elsewhere.
+ *
+ *************************************************************************************************/
 
 // Capture the full fields or methods from a Frida class reference via JVM reflection:
 const getFields = (cls) => getFridaValues(cls, cls.class.getDeclaredFields());

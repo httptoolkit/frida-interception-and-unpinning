@@ -31,7 +31,7 @@ To get started:
         -l ./android/android-proxy-override.js \
         -l ./android/android-system-certificate-injection.js \
         -l ./android/android-certificate-unpinning.js \
-        -l ./android/android-fallback-script.js \
+        -l ./android/android-certificate-unpinning-fallback.js \
         -f $PACKAGE_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-android-unpinning/issues/new) and help make these scripts even better.
