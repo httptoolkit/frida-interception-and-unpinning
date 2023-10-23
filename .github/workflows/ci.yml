@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/upload-artifact@v2
         with:
-          name: app
+          name: android-frida-interception-script.js
           path: ./build/android-frida-interception-script.js
           if-no-files-found: error
 
