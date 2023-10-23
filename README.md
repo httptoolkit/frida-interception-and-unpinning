@@ -2,16 +2,16 @@
 
 > _Part of [HTTP Toolkit](https://httptoolkit.com/android): powerful tools for building, testing & debugging HTTP(S)_
 
-This repo contains a set of Frida scripts designed to do everything required for fully automated HTTPS MitM interception on mobile devices.
+**This repo contains Frida scripts designed to do everything required for fully automated HTTPS MitM interception on mobile devices.**
 
-They can be used all together, to handle interception, manage certificate trust & disabling certificate pinning & transparency checks, for MitM interception of HTTP(S) traffic on Android (iOS coming soon!), or they can be used and tweaked independently to hook just specific features.
+This set of scripts can be used all together, to handle interception, manage certificate trust & disabling certificate pinning & transparency checks, for MitM interception of HTTP(S) traffic on Android (iOS coming soon!) or they can be used and tweaked independently to hook just specific features.
 
 The scripts can automatically handle:
 
-* Redirection of traffic to an HTTP(S) proxy - modifying both system settings & directly redirecting all socket connections
-* Injecting a given CA certificate into the system trust stores
-* Disabling all known certificate pinning tools
-* Fallback detection of remaining pinning failures, to provide auth-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly)
+* Redirection of traffic to an HTTP(S) proxy - modifying both system settings & directly redirecting all socket connections.
+* Injecting a given CA certificate into the system trust stores.
+* Patching all known certificate pinning and certificate transparency tools to allow interception by the same CA certificate.
+* As a fallback: auto-detection of remaining pinning failures, to attempt auto-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly).
 
 To get started:
 
