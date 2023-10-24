@@ -11,6 +11,10 @@
  * the proxy receives all connections (and so will see if connections don't trust its CA). It's still useful
  * to do proxy config alongside this, as applications may behave a little more 'correctly' if they're aware
  * they're using a proxy rather than doing so unknowingly.
+ *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
  */
 
 const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 10));
