@@ -36,6 +36,54 @@ To get started:
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-android-unpinning/issues/new) and help make these scripts even better.
 
+## The Scripts
+
+The command above uses all the scripts, but you can generally use any subset you like, although in almost all cases you will want to include `config.js` as the first script (this defines some variables that are used by other scripts).
+
+For example, to do unpinning alone, when handling proxy & certificate configuration elsewhere and without obfuscation fallbacks, you could just run:
+
+```bash
+frida -U \
+    -l ./config.js \
+    -l ./android/android-certificate-unpinning.js
+    -f $PACKAGE_ID
+```
+
+Each script includes detailed documentation on what it does and how it works in a large comment section at the top. The scripts are:
+
+* `config.js`
+
+    This defines variables used by other scripts:
+
+    * `CERT_PEM` - the extra CA certificate to trust, in PEM format
+    * `PROXY_HOST` - the IP address (IPv4) of the proxy server to use (not required if you're only unpinning)
+    * `PROXY_PORT` - the port of the proxy server to use (not required if you're only unpinning)
+    * `DEBUG_MODE` - defaults to `false`, but switching this to `true` will enable lots of extra output that can be useful for debugging and reverse engineering any issues.
+
+    This should be listed on the command line before any other scripts.
+
+* `native-connect-hook.js`
+
+    A low-level hook for all network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
+
+* `android/`
+
+    * `android-proxy-override.js`
+
+        Overrides the Android proxy settings for the target app, ensuring that all well-behaved traffic is redirected via the proxy server and intercepted.
+
+    * `android-system-certificate-injection.js`
+
+        Modifies the native Android APIs to ensure that all trust stores trust your extra CA certificate by default, allowing encrypted TLS traffic to be captured.
+
+    * `android-certificate-unpinning.js`
+
+        Modifies or disables many common known techniques for additional certificate restrictions, including certificate pinning (accepting only a small set of recognized certificates, rather than all certificates trusted on the system) and certificate transparency (validating that all used certificates have been registered in public certificate logs).
+
+    * `android-certificate-unpinning-fallback.js`
+
+        Detects unhandled certificate validation failures, and attempts to handle unknown unrecognized cases with auto-generated fallback patches. This is more experimental and could be slightly unpredictable, but is very helpful for obfuscated cases, and in general will either fix pinning issues (after one initial failure) or will at least highlight code for further reverse engineering in the Frida log output.
+
 ---
 
 These scripts are part of [a broader HTTP Toolkit project](https://httptoolkit.com/blog/frida-mobile-interception-funding/), funded through the [NGI Zero Entrust Fund](https://nlnet.nl/entrust), established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more on the [NLnet project page](https://nlnet.nl/project/F3-AppInterception#ack).
