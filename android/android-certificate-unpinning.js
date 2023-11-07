@@ -153,18 +153,65 @@ const PINNING_FIXES = {
     'com.android.okhttp.Address': [
         {
             methodName: '$init',
+            overload: [
+                'java.lang.String',
+                'int',
+                'com.android.okhttp.Dns',
+                'javax.net.SocketFactory',
+                'javax.net.ssl.SSLSocketFactory',
+                'javax.net.ssl.HostnameVerifier',
+                'com.android.okhttp.CertificatePinner',
+                'com.android.okhttp.Authenticator',
+                'java.net.Proxy',
+                'java.util.List',
+                'java.util.List',
+                'java.net.ProxySelector'
+            ],
             replacement: () => {
-                const OkHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier");
-                const defaultHostnameVerifier = OkHostnameVerifier.INSTANCE.value;
-
-                const CertPinner = Java.use("com.android.okhttp.CertificatePinner");
-                const defaultCertPinner = CertPinner.DEFAULT.value;
+                const defaultHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier")
+                    .INSTANCE.value;
+                const defaultCertPinner = Java.use("com.android.okhttp.CertificatePinner")
+                    .DEFAULT.value;
 
                 return function () {
                     // Override arguments, to swap any custom check params (widely used
                     // to add stricter rules to TLS verification) with the defaults instead:
                     arguments[5] = defaultHostnameVerifier;
                     arguments[6] = defaultCertPinner;
+
+                    this.$init(...arguments);
+                }
+            }
+        },
+        // Almost identical patch, but for Nougat and older. In these versions, the DNS argument
+        // isn't passed here, so the arguments to patch changes slightly:
+        {
+            methodName: '$init',
+            overload: [
+                'java.lang.String',
+                'int',
+                // No DNS param
+                'javax.net.SocketFactory',
+                'javax.net.ssl.SSLSocketFactory',
+                'javax.net.ssl.HostnameVerifier',
+                'com.android.okhttp.CertificatePinner',
+                'com.android.okhttp.Authenticator',
+                'java.net.Proxy',
+                'java.util.List',
+                'java.util.List',
+                'java.net.ProxySelector'
+            ],
+            replacement: () => {
+                const defaultHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier")
+                    .INSTANCE.value;
+                const defaultCertPinner = Java.use("com.android.okhttp.CertificatePinner")
+                    .DEFAULT.value;
+
+                return function () {
+                    // Override arguments, to swap any custom check params (widely used
+                    // to add stricter rules to TLS verification) with the defaults instead:
+                    arguments[4] = defaultHostnameVerifier;
+                    arguments[5] = defaultCertPinner;
 
                     this.$init(...arguments);
                 }
