@@ -107,107 +107,109 @@ Java.perform(function () {
             };
         };
 
-        const buildUnhandledErrorPatcher = (errorClassName) => function (errorMessage) {
-            try {
-                console.log('\n !!! --- Unexpected TLS failure --- !!!');
+        const buildUnhandledErrorPatcher = (errorClassName, originalConstructor) => {
+            return function (errorMessage) {
+                try {
+                    console.log('\n !!! --- Unexpected TLS failure --- !!!');
 
-                // Parse the stack trace to work out who threw this error:
-                const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
-                const exceptionStackIndex = stackTrace.findIndex(stack =>
-                    stack.getClassName() === errorClassName
-                );
-                const callingFunctionStack = stackTrace[exceptionStackIndex + 1];
+                    // Parse the stack trace to work out who threw this error:
+                    const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
+                    const exceptionStackIndex = stackTrace.findIndex(stack =>
+                        stack.getClassName() === errorClassName
+                    );
+                    const callingFunctionStack = stackTrace[exceptionStackIndex + 1];
 
-                const className = callingFunctionStack.getClassName();
-                const methodName = callingFunctionStack.getMethodName();
-                console.log(`      Thrown by ${className}->${methodName}`);
+                    const className = callingFunctionStack.getClassName();
+                    const methodName = callingFunctionStack.getMethodName();
+                    console.log(`      Thrown by ${className}->${methodName}`);
 
-                const callingClass = Java.use(className);
-                const callingMethod = callingClass[methodName];
+                    const callingClass = Java.use(className);
+                    const callingMethod = callingClass[methodName];
 
-                callingMethod.overloads.forEach((failingMethod) => {
-                    if (failingMethod.implementation) {
-                        console.warn('      Already patched - but still failing!')
-                        return; // Already patched by Frida - skip it
-                    }
-
-                    // Try to spot known methods (despite obfuscation) and disable them:
-                    if (isOkHttpCheckMethod(errorMessage, failingMethod)) {
-                        // See okhttp3.CertificatePinner patches in unpinning script:
-                        failingMethod.implementation = () => {
-                            if (DEBUG_MODE) console.log(` => Fallback OkHttp patch`);
-                        };
-                        console.log(`      [+] ${className}->${methodName} (fallback OkHttp patch)`);
-                    } else if (isAppmattusOkHttpInterceptMethod(errorMessage, failingMethod)) {
-                        // See Appmattus CertificateTransparencyInterceptor patch in unpinning script:
-                        const chainType = Java.use(failingMethod.argumentTypes[0].className);
-                        const responseTypeName = failingMethod.returnType.className;
-                        const okHttpChain = matchOkHttpChain(chainType, responseTypeName);
-                        failingMethod.implementation = (chain) => {
-                            if (DEBUG_MODE) console.log(` => Fallback Appmattus+OkHttp patch`);
-                            const proceed = chain[okHttpChain.proceedMethodName].bind(chain);
-                            const request = chain[okHttpChain.requestFieldName].value;
-                            return proceed(request);
-                        };
-                        console.log(`      [+] ${className}->${methodName} (fallback Appmattus+OkHttp patch)`);
-                    } else if (isX509TrustManager(callingClass, methodName)) {
-                        const argumentTypes = failingMethod.argumentTypes.map(t => t.className);
-                        const returnType = failingMethod.returnType.className;
-
-                        if (
-                            argumentTypes.length === 2 &&
-                            argumentTypes.every((t, i) => t === BASE_METHOD_ARGUMENTS[i]) &&
-                            returnType === 'void'
-                        ) {
-                            // For the base method, just check against the default:
-                            failingMethod.implementation = (certs, authType) => {
-                                if (DEBUG_MODE) console.log(` => Fallback X509TrustManager patch of ${
-                                    className
-                                } base method`);
-
-                                const defaultTrustManager = getCustomX509TrustManager(); // Defined in the unpinning script
-                                defaultTrustManager.checkServerTrusted(certs, authType);
-                            };
-                            console.log(`      [+] ${className}->${methodName} (fallback X509TrustManager base patch)`);
-                        } else if (
-                            argumentTypes.length === 3 &&
-                            argumentTypes.every((t, i) => t === EXTENDED_METHOD_ARGUMENTS[i]) &&
-                            returnType === 'java.util.List'
-                        ) {
-                            // For the extended method, we just ignore the hostname, and if the certs are good
-                            // (i.e they're ours), then we say the whole chain is good to go:
-                            failingMethod.implementation = function (certs, authType, _hostname) {
-                                if (DEBUG_MODE) console.log(` => Fallback X509TrustManager patch of ${
-                                    className
-                                } extended method`);
-
-                                try {
-                                    defaultTrustManager.checkServerTrusted(certs, authType);
-                                } catch (e) {
-                                    console.error('Default TM threw:', e);
-                                }
-                                return Java.use('java.util.Arrays').asList(certs);
-                            };
-                            console.log(`      [+] ${className}->${methodName} (fallback X509TrustManager ext patch)`);
-                        } else {
-                            console.warn(`      [ ] Skipping unrecognized checkServerTrusted signature in class ${
-                                callingClass.class.getName()
-                            }`);
+                    callingMethod.overloads.forEach((failingMethod) => {
+                        if (failingMethod.implementation) {
+                            console.warn('      Already patched - but still failing!')
+                            return; // Already patched by Frida - skip it
                         }
-                    } else {
-                        console.error('      [ ] Unrecognized TLS error - this must be patched manually');
-                        return;
-                        // Later we could try to cover other cases here - automatically recognizing other
-                        // OkHttp interceptors for example, or potentially other approaches, but we need
-                        // to do so carefully to avoid disabling TLS checks entirely.
-                    }
-                });
-            } catch (e) {
-                console.log('      [ ] Failed to automatically patch failure');
-                console.warn(e);
-            }
 
-            return this.$init(errorMessage);
+                        // Try to spot known methods (despite obfuscation) and disable them:
+                        if (isOkHttpCheckMethod(errorMessage, failingMethod)) {
+                            // See okhttp3.CertificatePinner patches in unpinning script:
+                            failingMethod.implementation = () => {
+                                if (DEBUG_MODE) console.log(` => Fallback OkHttp patch`);
+                            };
+                            console.log(`      [+] ${className}->${methodName} (fallback OkHttp patch)`);
+                        } else if (isAppmattusOkHttpInterceptMethod(errorMessage, failingMethod)) {
+                            // See Appmattus CertificateTransparencyInterceptor patch in unpinning script:
+                            const chainType = Java.use(failingMethod.argumentTypes[0].className);
+                            const responseTypeName = failingMethod.returnType.className;
+                            const okHttpChain = matchOkHttpChain(chainType, responseTypeName);
+                            failingMethod.implementation = (chain) => {
+                                if (DEBUG_MODE) console.log(` => Fallback Appmattus+OkHttp patch`);
+                                const proceed = chain[okHttpChain.proceedMethodName].bind(chain);
+                                const request = chain[okHttpChain.requestFieldName].value;
+                                return proceed(request);
+                            };
+                            console.log(`      [+] ${className}->${methodName} (fallback Appmattus+OkHttp patch)`);
+                        } else if (isX509TrustManager(callingClass, methodName)) {
+                            const argumentTypes = failingMethod.argumentTypes.map(t => t.className);
+                            const returnType = failingMethod.returnType.className;
+
+                            if (
+                                argumentTypes.length === 2 &&
+                                argumentTypes.every((t, i) => t === BASE_METHOD_ARGUMENTS[i]) &&
+                                returnType === 'void'
+                            ) {
+                                // For the base method, just check against the default:
+                                failingMethod.implementation = (certs, authType) => {
+                                    if (DEBUG_MODE) console.log(` => Fallback X509TrustManager patch of ${
+                                        className
+                                    } base method`);
+
+                                    const defaultTrustManager = getCustomX509TrustManager(); // Defined in the unpinning script
+                                    defaultTrustManager.checkServerTrusted(certs, authType);
+                                };
+                                console.log(`      [+] ${className}->${methodName} (fallback X509TrustManager base patch)`);
+                            } else if (
+                                argumentTypes.length === 3 &&
+                                argumentTypes.every((t, i) => t === EXTENDED_METHOD_ARGUMENTS[i]) &&
+                                returnType === 'java.util.List'
+                            ) {
+                                // For the extended method, we just ignore the hostname, and if the certs are good
+                                // (i.e they're ours), then we say the whole chain is good to go:
+                                failingMethod.implementation = function (certs, authType, _hostname) {
+                                    if (DEBUG_MODE) console.log(` => Fallback X509TrustManager patch of ${
+                                        className
+                                    } extended method`);
+
+                                    try {
+                                        defaultTrustManager.checkServerTrusted(certs, authType);
+                                    } catch (e) {
+                                        console.error('Default TM threw:', e);
+                                    }
+                                    return Java.use('java.util.Arrays').asList(certs);
+                                };
+                                console.log(`      [+] ${className}->${methodName} (fallback X509TrustManager ext patch)`);
+                            } else {
+                                console.warn(`      [ ] Skipping unrecognized checkServerTrusted signature in class ${
+                                    callingClass.class.getName()
+                                }`);
+                            }
+                        } else {
+                            console.error('      [ ] Unrecognized TLS error - this must be patched manually');
+                            return;
+                            // Later we could try to cover other cases here - automatically recognizing other
+                            // OkHttp interceptors for example, or potentially other approaches, but we need
+                            // to do so carefully to avoid disabling TLS checks entirely.
+                        }
+                    });
+                } catch (e) {
+                    console.log('      [ ] Failed to automatically patch failure');
+                    console.warn(e);
+                }
+
+                return originalConstructor.call(this, ...arguments);
+            }
         };
 
         // These are the exceptions we watch for and attempt to auto-patch out after they're thrown:
@@ -217,7 +219,10 @@ Java.perform(function () {
         ].forEach((errorClassName) => {
             const ErrorClass = Java.use(errorClassName);
             ErrorClass.$init.overloads.forEach((overload) => {
-                overload.implementation = buildUnhandledErrorPatcher(errorClassName, ErrorClass);
+                overload.implementation = buildUnhandledErrorPatcher(
+                    errorClassName,
+                    overload
+                );
             });
         })
 

@@ -136,13 +136,13 @@ const PINNING_FIXES = {
         {
             methodName: '$init',
             overload: '*',
-            replacement: () => {
+            replacement: (targetMethod) => {
                 const PinSet = Java.use('android.security.net.config.PinSet');
                 const EMPTY_PINSET = PinSet.EMPTY_PINSET.value;
                 return function () {
                     // Always ignore the 2nd 'pins' PinSet argument entirely:
                     arguments[2] = EMPTY_PINSET;
-                    this.$init(...arguments);
+                    targetMethod.call(this, ...arguments);
                 }
             }
         }
@@ -167,7 +167,7 @@ const PINNING_FIXES = {
                 'java.util.List',
                 'java.net.ProxySelector'
             ],
-            replacement: () => {
+            replacement: (targetMethod) => {
                 const defaultHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier")
                     .INSTANCE.value;
                 const defaultCertPinner = Java.use("com.android.okhttp.CertificatePinner")
@@ -179,7 +179,7 @@ const PINNING_FIXES = {
                     arguments[5] = defaultHostnameVerifier;
                     arguments[6] = defaultCertPinner;
 
-                    this.$init(...arguments);
+                    targetMethod.call(this, ...arguments);
                 }
             }
         },
@@ -201,7 +201,7 @@ const PINNING_FIXES = {
                 'java.util.List',
                 'java.net.ProxySelector'
             ],
-            replacement: () => {
+            replacement: (targetMethod) => {
                 const defaultHostnameVerifier = Java.use("com.android.okhttp.internal.tls.OkHostnameVerifier")
                     .INSTANCE.value;
                 const defaultCertPinner = Java.use("com.android.okhttp.CertificatePinner")
@@ -213,7 +213,7 @@ const PINNING_FIXES = {
                     arguments[4] = defaultHostnameVerifier;
                     arguments[5] = defaultCertPinner;
 
-                    this.$init(...arguments);
+                    targetMethod.call(this, ...arguments);
                 }
             }
         }
@@ -346,13 +346,14 @@ const PINNING_FIXES = {
     'com.silkimen.cordovahttp.CordovaServerTrust': [
         {
             methodName: '$init',
-            replacement: () => function () {
+            replacement: (targetMethod) => function () {
                 // Ignore any attempts to set trust to 'pinned'. Default settings will trust
                 // our cert because of the separate system-certificate injection step.
                 if (arguments[0] === 'pinned') {
                     arguments[0] = 'default';
                 }
-                return this.$init(...arguments);
+
+                return targetMethod.call(this, ...arguments);
             }
         }
     ],
