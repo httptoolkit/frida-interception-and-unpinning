@@ -108,9 +108,13 @@ Java.perform(function () {
         };
 
         const buildUnhandledErrorPatcher = (errorClassName, originalConstructor) => {
-            return function (errorMessage) {
+            return function (errorArg) {
                 try {
                     console.log('\n !!! --- Unexpected TLS failure --- !!!');
+
+                    // This may be a message, or an cause, or plausibly maybe other types? But
+                    // stringifying gives something consistently message-shaped, so that'll do.
+                    const errorMessage = errorArg?.toString() ?? '';
 
                     // Parse the stack trace to work out who threw this error:
                     const stackTrace = Java.use('java.lang.Thread').currentThread().getStackTrace();
