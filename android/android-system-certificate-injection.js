@@ -25,9 +25,16 @@ Java.perform(() => {
     const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
     const CertFactory = Java.use('java.security.cert.CertificateFactory');
 
-    const certFactory = CertFactory.getInstance("X.509");
-    const certBytes = String.$new(CERT_PEM).getBytes();
-    const cert = certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
+    let cert;
+    try {
+        const certFactory = CertFactory.getInstance("X.509");
+        const certBytes = String.$new(CERT_PEM).getBytes();
+        cert = certFactory.generateCertificate(ByteArrayInputStream.$new(certBytes));
+    } catch (e) {
+        console.error('Could not parse provided certificate PEM!');
+        console.error(e);
+        Java.use('java.lang.System').exit(1);
+    }
 
     // Then we hook TrustedCertificateIndex. This is used for caching known trusted certs within Conscrypt -
     // by prepopulating all instances, we ensure that all TrustManagerImpls (and potentially other
@@ -46,6 +53,9 @@ Java.perform(() => {
                 throw new Error(`${TrustedCertificateIndexClassname} not found - could not inject system certificate`);
             } else {
                 // Other classnames are optional fallbacks
+                if (DEBUG_MODE) {
+                    console.log(`[ ] Skipped cert injection for ${TrustedCertificateIndexClassname} (not present)`);
+                }
                 return;
             }
         }
@@ -66,6 +76,8 @@ Java.perform(() => {
                 return result;
             };
         });
+
+        if (DEBUG_MODE) console.log(`[+] Injected cert into ${TrustedCertificateIndexClassname}`);
     });
 
     // This effectively adds us to the system certs, and also defeats quite a bit of basic certificate
