@@ -150,6 +150,40 @@ const PINNING_FIXES = {
 
     // --- Native HostnameVerification override (n.b. Android contains its own vendored OkHttp v2!)
 
+    'com.android.okhttp.internal.tls.OkHostnameVerifier': [
+        {
+            methodName: 'verify',
+            overload: [
+                'java.lang.String',
+                'javax.net.ssl.SSLSession'
+            ],
+            replacement: (targetMethod) => {
+                // Our trust manager - this trusts *only* our extra CA
+                const trustManager = getCustomX509TrustManager();
+
+                return function (hostname, sslSession) {
+                    try {
+                        const certs = sslSession.getPeerCertificates();
+
+                        // https://stackoverflow.com/a/70469741/68051
+                        const authType = "RSA";
+
+                        // This throws if the certificate isn't trusted (i.e. if it's
+                        // not signed by our extra CA specifically):
+                        trustManager.checkServerTrusted(certs, authType);
+
+                        // If the cert is from our CA, great! Skip hostname checks entirely.
+                        return true;
+                    } catch (e) {} // Ignore errors and fallback to default behaviour
+
+                    // We fallback to ensure that connections with other CAs (e.g. direct
+                    // connections allowed past the proxy) validate as normal.
+                    return targetMethod.call(this, ...arguments);
+                }
+            }
+        }
+    ],
+
     'com.android.okhttp.Address': [
         {
             methodName: '$init',
