@@ -233,9 +233,10 @@ Java.perform(function () {
             });
         })
 
-        console.log('[+] TLS error auto-patcher');
+        console.log('== Unpinning fallback auto-patcher installed ==');
     } catch (err) {
-        console.log(err);
-        console.log('[ ] TLS error auto-patcher');
+        console.error(err);
+        console.error(' !!! --- Unpinning fallback auto-patcher installation failed --- !!!');
     }
+
 });
