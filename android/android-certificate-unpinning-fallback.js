@@ -125,6 +125,9 @@ Java.perform(function () {
 
                     const className = callingFunctionStack.getClassName();
                     const methodName = callingFunctionStack.getMethodName();
+
+                    const errorTypeName = errorClassName.split('.').slice(-1)[0];
+                    console.log(`      ${errorTypeName}: ${errorMessage}`);
                     console.log(`      Thrown by ${className}->${methodName}`);
 
                     const callingClass = Java.use(className);
