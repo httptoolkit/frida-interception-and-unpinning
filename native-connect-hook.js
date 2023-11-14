@@ -58,7 +58,10 @@ if (!connectFn) { // Should always be set, but just in case
                         : PROXY_HOST_IPv4_BYTES
                 );
 
-                if (isIntercepted) return;
+                if (isIntercepted) {
+                    this.intercepted = true;
+                    return;
+                }
 
                 if (!shouldBeIntercepted) {
                     // Not intercecpted, sent to unrecognized port - probably not HTTP(S)
@@ -88,22 +91,33 @@ if (!connectFn) { // Should always be set, but just in case
                     // Skip 4 bytes: 2 family, 2 port
                     addrPtr.add(4).writeByteArray(PROXY_HOST_IPv4_BYTES);
                 }
+                this.intercepted = true;
             } else if (DEBUG_MODE) {
                 console.log(`Ignoring ${sockType} connection`);
-                this.ignored = true;
             }
 
             // N.b. we ignore all non-TCP connections: both UDP and Unix streams
         },
         onLeave: function (result) {
-            if (!DEBUG_MODE || this.ignored) return;
+            if (!this.intercepted) return; // Don't log about connections we don't touch.
+            const wasSuccessful = result.toInt32() === 0;
+
+            if (wasSuccessful && !DEBUG_MODE) return;
 
             const fd = this.sockFd;
             const sockType = Socket.type(fd);
             const address = Socket.peerAddress(fd);
-            console.debug(
-                `Connected ${sockType} fd ${fd} to ${JSON.stringify(address)} (${result.toInt32()})`
-            );
+
+            if (wasSuccessful) {
+                console.debug(
+                    `Connected ${sockType} fd ${fd} to ${JSON.stringify(address)} (${result.toInt32()})`
+                );
+            } else {
+                console.error(
+                    `\n !!! --- Intercepted ${sockType} connection ${fd} failed when redirected to proxy ${PROXY_HOST}:${PROXY_PORT} --- !!!\n` +
+                      `         Is your proxy configured correctly?\n`
+                );
+            }
         }
     });
 
