@@ -56,7 +56,7 @@ if (DEBUG_MODE) {
 if (CERT_PEM.match(/\[!!.* CA certificate data .* !!\]/)) {
     throw new Error('No certificate was provided' +
         '\n\n' +
-        'You need to set CERT_PEM in the Frica config script ' +
+        'You need to set CERT_PEM in the Frida config script ' +
         'to the contents of your CA certificate.'
     );
 }
