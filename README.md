@@ -82,7 +82,7 @@ Each script includes detailed documentation on what it does and how it works in 
 
     * `android-certificate-unpinning-fallback.js`
 
-        Detects unhandled certificate validation failures, and attempts to handle unknown unrecognized cases with auto-generated fallback patches. This is more experimental and could be slightly unpredictable, but is very helpful for obfuscated cases, and in general will either fix pinning issues (after one initial failure) or will at least highlight code for further reverse engineering in the Frida log output.
+        Detects unhandled certificate validation failures, and attempts to handle unknown unrecognized cases with auto-generated fallback patches. This is more experimental and could be slightly unpredictable, but is very helpful for obfuscated cases, and in general will either fix pinning issues (after one initial failure) or will at least highlight code for further reverse engineering in the Frida log output. This script shares some logic with `android-certificate-unpinning.js`, and cannot be used standalone - if you want to use this script, you'll need to include the non-fallback unpinning script too.
 
 ---
 
