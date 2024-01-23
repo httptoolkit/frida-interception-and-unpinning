@@ -18,12 +18,12 @@ To get started:
 1. Start your MitM proxy (e.g. [HTTP Toolkit](https://httptoolkit.com/android/)), and set up your rooted Android device or emulator, connected to ADB.
 2. Find your MitM proxy's port (e.g. 8000) and its CA certificate in PEM format (should start with `-----BEGIN CERTIFICATE-----`). In HTTP Toolkit, both details can be found in the 'Anything' option on the Intercept page.
 3. Open `config.js`, and add those details:
-    * `CERT_PEM`: your CA certificate in PEM format
+    * `CERT_PEM`: your CA certificate in PEM format (Open with a text editor to extract the information)
     * `PROXY_PORT`: the proxy's port
     * `PROXY_HOST`: the address of your proxy, from the perspective of your device (or use `adb reverse tcp:$PORT tcp:$PORT` to forward the port over ADB, and use `127.0.0.1` as the host)
-4. Install & start Frida on your device (e.g. download the relevant server from [github.com/frida/frida](https://github.com/frida/frida/releases/latest), extract it, `adb push` it to your device, and then run it with `adb shell`, `su`, `chmod +x /.../frida-server`, `/.../frida-server`).
+4. Install & start Frida on your device (e.g. download the relevant server (frida-server) from [github.com/frida/frida](https://github.com/frida/frida/releases/latest), extract it, `adb push` it to your device (ensure device is on and connected via ADB), and then run it with the following 4 commands: `adb shell`, `su` (Here you get super user (root) permissions, run `whoami` to check if you are root or not, if you are not root it will not work), `chmod +x /.../frida-server`, `/.../frida-server`).
 5. Find the package id for the app you're interested in (for a quick test, try using [github.com/httptoolkit/android-ssl-pinning-demo](https://github.com/httptoolkit/android-ssl-pinning-demo) - the package id is `tech.httptoolkit.pinning_demo`)
-6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is:
+6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is (if you are on Linux):
     ```bash
     frida -U \
         -l ./config.js \
