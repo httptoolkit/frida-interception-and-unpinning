@@ -16,7 +16,7 @@ The scripts can automatically handle:
 To get started:
 
 1. Start your MitM proxy (e.g. [HTTP Toolkit](https://httptoolkit.com/android/)), and set up your rooted Android device or emulator, connected to ADB.
-2. Find your MitM proxy's port (e.g. 8000) and its CA certificate in PEM format (should start with `-----BEGIN CERTIFICATE-----`).
+2. Find your MitM proxy's port (e.g. 8000) and its CA certificate in PEM format (should start with `-----BEGIN CERTIFICATE-----`). In HTTP Toolkit, both details can be found in the 'Anything' option on the Intercept page.
 3. Open `config.js`, and add those details:
     * `CERT_PEM`: your CA certificate in PEM format
     * `PROXY_PORT`: the proxy's port
