@@ -45,8 +45,7 @@ const crypto_buffer_data = new NativeFunction(
     'pointer', ['pointer']
 );
 
-const SSL_VERIFY_NONE = 0x0;
-const SSL_VERIFY_PEER = 0x1;
+const SSL_VERIFY_OK = 0x0;
 
 // We cache the verification callbacks we create. In general (in testing, 100% of the time) the
 // 'real' callback is always the exact same address, so this is much more efficient than creating
@@ -59,8 +58,14 @@ const buildVerificationCallback = (realCallbackAddr) => {
 
         const hookedCallback = new NativeCallback(function (ssl, out_alert) {
             // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
-            // we were given is present. No flexibility for non-trivial cert chains, and zero
-            // validation beyond presence of the expected CA certificate.
+            // we were given is present. No flexibility for non-trivial cert chains, and no
+            // validation beyond presence of the expected CA certificate. BoringSSL does do a
+            // fair amount of essential validation independent of the certificate comparison
+            // though, so some basics may be covered regardless (see tls13_process_certificate_verify).
+
+            // This *intentionally* does not reject certs with the wrong hostname, expired CA
+            // or leaf certs, and lots of other issues. This is significantly better than nothing,
+            // but it is not production-ready TLS verification for general use in untrusted envs!
 
             const peerCerts = SSL_get0_peer_certificates(ssl);
 
@@ -76,7 +81,7 @@ const buildVerificationCallback = (realCallbackAddr) => {
                 const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
 
                 if (certData.every((byte, j) => CERT_DER[j] === byte)) {
-                    return SSL_VERIFY_NONE;
+                    return SSL_VERIFY_OK;
                 }
             }
 
