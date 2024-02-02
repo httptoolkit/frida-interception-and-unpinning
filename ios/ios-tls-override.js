@@ -19,7 +19,8 @@
  * Since iOS 11 (2017) Apple has used BoringSSL internally to handle all TLS. This code
  * hooks low-level BoringSSL calls, to override all custom certificate validation completely.
  * https://nabla-c0d3.github.io/blog/2019/05/18/ssl-kill-switch-for-ios12/ to the general concept,
- * but this
+ * but note that this script goes further - reimplementing basic TLS cert validation, rather than
+ * just returning OK blindly for all connections.
  *
  * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
  * SPDX-License-Identifier: AGPL-3.0-or-later
