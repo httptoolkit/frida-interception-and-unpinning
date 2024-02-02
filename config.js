@@ -42,11 +42,17 @@ const IGNORED_NON_HTTP_PORTS = [];
 if (DEBUG_MODE) {
     // Add logging just for clean output & to separate reloads:
     console.log('\n*** Starting scripts ***');
-    Java.perform(() => {
+    if (Java.available) {
+        Java.perform(() => {
+            setTimeout(() => console.log('*** Scripts completed ***\n'), 5);
+            // (We assume that nothing else will take more than 5ms, but app startup
+            // probably will, so this should separate script & runtime logs)
+        });
+    } else {
         setTimeout(() => console.log('*** Scripts completed ***\n'), 5);
         // (We assume that nothing else will take more than 5ms, but app startup
         // probably will, so this should separate script & runtime logs)
-    });
+    }
 } else {
     console.log(''); // Add just a single newline, for minimal clarity
 }
