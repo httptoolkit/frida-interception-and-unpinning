@@ -87,6 +87,12 @@ for (let i = 0; i < BASE64_CHARS.length; i++) {
     BASE64_LOOKUP[BASE64_CHARS.charCodeAt(i)] = i;
 }
 
+
+/**
+ * Take a base64 string, and return the raw bytes
+ * @param {string} input
+ * @returns Uint8Array
+ */
 function decodeBase64(input) {
     // Calculate the length of the output buffer based on padding:
     let outputLength = Math.floor((input.length * 3) / 4);
@@ -115,6 +121,11 @@ function decodeBase64(input) {
     return output;
 }
 
+/**
+ * Take a single-certificate PEM string, and return the raw DER bytes
+ * @param {string} input
+ * @returns Uint8Array
+ */
 function pemToDer(input) {
     const pemLines = input.split('\n');
     if (

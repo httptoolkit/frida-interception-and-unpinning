@@ -1,6 +1,31 @@
-// Since iOS 11 (2017) Apple has used BoringSSL internally to handle all TLS. This code
-// hooks low-level BoringSSL calls, to override all custom certificate validation options complete.
-// This is a good intro: https://nabla-c0d3.github.io/blog/2019/05/18/ssl-kill-switch-for-ios12/
+/**************************************************************************************************
+ *
+ * Once we have captured traffic (once it's being sent to our proxy port) the next step is
+ * to ensure any clients using TLS (HTTPS) trust our CA certificate, to allow us to intercept
+ * encrypted connections successfully.
+ *
+ * This script does this, by defining overrides to hook BoringSSL on iOS 11+, so that normal
+ * certificate validation is skipped, and instead any TLS connection using our trusted CA is
+ * always trusted. In general use this disables both normal & certificate-pinned TLS/HTTPS
+ * validation, so that all connections which use your CA should always succeed.
+ *
+ * This does not completely disable TLS validation, but it does significantly relax it - it's
+ * intended for use with the other scripts in this repo that ensure all traffic is routed directly
+ * to your MitM proxy (generally on your local network). You probably don't want to use this for
+ * any sensitive traffic sent over public/untrusted networks - it is difficult to intercept, and
+ * any attacker would need a copy of the CA certifcate you're using, but by its nature as a messy
+ * hook around TLS internals it's probably not 100% secure.
+ *
+ * Since iOS 11 (2017) Apple has used BoringSSL internally to handle all TLS. This code
+ * hooks low-level BoringSSL calls, to override all custom certificate validation completely.
+ * https://nabla-c0d3.github.io/blog/2019/05/18/ssl-kill-switch-for-ios12/ to the general concept,
+ * but this
+ *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ *
+ *************************************************************************************************/
 
 try {
     Module.ensureInitialized("libboringssl.dylib");
