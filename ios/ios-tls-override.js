@@ -19,11 +19,12 @@ const VerificationCallback = new NativeCallback(function (ssl, out_alert){
 	return SSL_VERIFY_NONE;
 },'int',['pointer','pointer']);
 
-[
+const customVerifyAddrs = [
     Module.findExportByName("libboringssl.dylib", "SSL_set_custom_verify"),
     Module.findExportByName("libboringssl.dylib", "SSL_CTX_set_custom_verify")
+].filter(Boolean);
 
-].filter(Boolean).forEach((set_custom_verify_addr) => {
+customVerifyAddrs.forEach((set_custom_verify_addr) => {
     const set_custom_verify_fn = new NativeFunction(
         set_custom_verify_addr,
         'void', ['pointer', 'int', 'pointer']
@@ -36,13 +37,14 @@ const VerificationCallback = new NativeCallback(function (ssl, out_alert){
     }, 'void', ['pointer', 'int', 'pointer']));
 });
 
-// Hooking this is apparently required for some verification paths which check the
-// result is not 0x0. Any return value should work fine though.
-const ssl_get_psk_identity = new NativeFunction(
-	Module.findExportByName("libboringssl.dylib", "SSL_get_psk_identity"),
-	'pointer', ['pointer']
-);
+const get_psk_identity_addr = Module.findExportByName("libboringssl.dylib", "SSL_get_psk_identity");
+if (get_psk_identity_addr) {
+    // Hooking this is apparently required for some verification paths which check the
+    // result is not 0x0. Any return value should work fine though.
+    Interceptor.replace(get_psk_identity_addr, new NativeCallback(function(ssl) {
+        return "PSK_IDENTITY_PLACEHOLDER";
+    }, 'pointer', ['pointer']));
+} else if (customVerifyAddrs.length) {
+    console.log(`Patched ${customVerifyAddrs.length} custom_verify methods, but couldn't find get_psk_identity`);
+}
 
-Interceptor.replace(ssl_get_psk_identity, new NativeCallback(function(ssl) {
-	return "PSK_IDENTITY_PLACEHOLDER";
-}, 'pointer', ['pointer']));
