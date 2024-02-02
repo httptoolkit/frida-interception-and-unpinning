@@ -48,32 +48,47 @@ const crypto_buffer_data = new NativeFunction(
 const SSL_VERIFY_NONE = 0x0;
 const SSL_VERIFY_PEER = 0x1;
 
-const VerificationCallback = new NativeCallback(function (ssl, out_alert) {
-    // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
-    // we were given is present. No flexibility for non-trivial cert chains, and zero
-    // validation of expiry/hostname/etc.
+// We cache the verification callbacks we create. In general (in testing, 100% of the time) the
+// 'real' callback is always the exact same address, so this is much more efficient than creating
+// a new callback every time.
+const verificationCallbackCache = {};
 
-    const peerCerts = SSL_get0_peer_certificates(ssl);
+const buildVerificationCallback = (realCallbackAddr) => {
+    if (!verificationCallbackCache[realCallbackAddr]) {
+        const realCallback = new NativeFunction(realCallbackAddr, 'int', ['pointer','pointer']);
 
-    // Loop through every cert in the chain:
-    for (let i = 0; i < sk_num(peerCerts); i++) {
-        // For each cert, check if it *exactly* matches our configured CA cert:
-        const cert = sk_value(peerCerts, i);
-        const certDataLength = crypto_buffer_len(cert).toNumber();
+        const hookedCallback = new NativeCallback(function (ssl, out_alert) {
+            // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
+            // we were given is present. No flexibility for non-trivial cert chains, and zero
+            // validation beyond presence of the expected CA certificate.
 
-        if (certDataLength !== CERT_DER.byteLength) continue;
+            const peerCerts = SSL_get0_peer_certificates(ssl);
 
-        const certPointer = crypto_buffer_data(cert);
-        const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
+            // Loop through every cert in the chain:
+            for (let i = 0; i < sk_num(peerCerts); i++) {
+                // For each cert, check if it *exactly* matches our configured CA cert:
+                const cert = sk_value(peerCerts, i);
+                const certDataLength = crypto_buffer_len(cert).toNumber();
 
-        if (certData.every((byte, j) => CERT_DER[j] === byte)) {
-            return SSL_VERIFY_NONE;
-        }
+                if (certDataLength !== CERT_DER.byteLength) continue;
+
+                const certPointer = crypto_buffer_data(cert);
+                const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
+
+                if (certData.every((byte, j) => CERT_DER[j] === byte)) {
+                    return SSL_VERIFY_NONE;
+                }
+            }
+
+            // No matched peer - fallback to the provided callback instead:
+            return realCallback(ssl, out_alert);
+        }, 'int', ['pointer','pointer']);
+
+        verificationCallbackCache[realCallbackAddr] = hookedCallback;
     }
 
-    // No matched peer - fallback to default OpenSSL cert verification
-	return SSL_VERIFY_PEER;
-},'int',['pointer','pointer']);
+    return verificationCallbackCache[realCallbackAddr];
+};
 
 const customVerifyAddrs = [
     Module.findExportByName("libboringssl.dylib", "SSL_set_custom_verify"),
@@ -88,8 +103,8 @@ customVerifyAddrs.forEach((set_custom_verify_addr) => {
 
     // When this function is called, ignore the provided callback, and
     // configure our callback instead:
-    Interceptor.replace(set_custom_verify_fn, new NativeCallback(function(ssl, mode, _ignoredProvidedCallback) {
-        set_custom_verify_fn(ssl, mode, VerificationCallback);
+    Interceptor.replace(set_custom_verify_fn, new NativeCallback(function(ssl, mode, providedCallbackAddr) {
+        set_custom_verify_fn(ssl, mode, buildVerificationCallback(providedCallbackAddr));
     }, 'void', ['pointer', 'int', 'pointer']));
 });
 
