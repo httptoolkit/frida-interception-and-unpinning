@@ -66,3 +66,76 @@ if (CERT_PEM.match(/\[!!.* CA certificate data .* !!\]/)) {
         'to the contents of your CA certificate.'
     );
 }
+
+
+
+// ----------------------------------------------------------------------------
+// Don't modify any of the below unless you know what you're doing!
+// This section defines various utilities & calculates some constants which may
+// be used by later scripts elsewhere in this project.
+// ----------------------------------------------------------------------------
+
+
+
+// As web atob & Node.js Buffer aren't available, we need to reimplement base64 decoding
+// in pure JS. This is a quick rough implementation without much error handling etc!
+
+// Base64 character set (plus padding character =) and lookup:
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+const BASE64_LOOKUP = new Uint8Array(123);
+for (let i = 0; i < BASE64_CHARS.length; i++) {
+    BASE64_LOOKUP[BASE64_CHARS.charCodeAt(i)] = i;
+}
+
+function decodeBase64(input) {
+    // Calculate the length of the output buffer based on padding:
+    let outputLength = Math.floor((input.length * 3) / 4);
+    if (input[input.length - 1] === '=') outputLength--;
+    if (input[input.length - 2] === '=') outputLength--;
+
+    const output = new Uint8Array(outputLength);
+    let outputPos = 0;
+
+    // Process each 4-character block:
+    for (let i = 0; i < input.length; i += 4) {
+        const a = BASE64_LOOKUP[input.charCodeAt(i)];
+        const b = BASE64_LOOKUP[input.charCodeAt(i + 1)];
+        const c = BASE64_LOOKUP[input.charCodeAt(i + 2)];
+        const d = BASE64_LOOKUP[input.charCodeAt(i + 3)];
+
+        // Assemble into 3 bytes:
+        const chunk = (a << 18) | (b << 12) | (c << 6) | d;
+
+        // Add each byte to the output buffer, unless it's padding:
+        output[outputPos++] = (chunk >> 16) & 0xff;
+        if (input.charCodeAt(i + 2) !== 61) output[outputPos++] = (chunk >> 8) & 0xff;
+        if (input.charCodeAt(i + 3) !== 61) output[outputPos++] = chunk & 0xff;
+    }
+
+    return output;
+}
+
+function pemToDer(input) {
+    const pemLines = input.split('\n');
+    if (
+        pemLines[0] !== '-----BEGIN CERTIFICATE-----' ||
+        pemLines[pemLines.length- 1] !== '-----END CERTIFICATE-----'
+    ) {
+        throw new Error(
+            'Your certificate should be in PEM format, starting & ending ' +
+            'with a BEGIN CERTIFICATE & END CERTIFICATE header/footer'
+        );
+    }
+
+    const base64Data = pemLines.slice(1, -1).map(l => l.trim()).join('');
+    if ([...base64Data].some(c => !BASE64_CHARS.includes(c))) {
+        throw new Error(
+            'Your certificate should be in PEM format, containing only ' +
+            'base64 data between a BEGIN & END CERTIFICATE header/footer'
+        );
+    }
+
+    return decodeBase64(base64Data);
+}
+
+const CERT_DER = pemToDer(CERT_PEM);
