@@ -4,16 +4,16 @@
 
 **This repo contains Frida scripts designed to do everything required for fully automated HTTPS MitM interception on mobile devices.**
 
-This set of scripts can be used all together, to handle interception, manage certificate trust & disabling certificate pinning & transparency checks, for MitM interception of HTTP(S) traffic on Android (iOS coming soon!) or they can be used and tweaked independently to hook just specific features.
+This set of scripts can be used all together, to handle interception, manage certificate trust & disable certificate pinning & transparency checks, for MitM interception of HTTP(S) traffic on Android and iOS, or they can be used and tweaked independently to hook just specific features.
 
 The scripts can automatically handle:
 
 * Redirection of traffic to an HTTP(S) proxy - modifying both system settings & directly redirecting all socket connections.
-* Injecting a given CA certificate into the system trust stores.
-* Patching all known certificate pinning and certificate transparency tools to allow interception by the same CA certificate.
-* As a fallback: auto-detection of remaining pinning failures, to attempt auto-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly).
+* Injecting a given CA certificate into the system trust stores so they're trusted in connections by default.
+* Patching many (all?) known certificate pinning and certificate transparency tools, to allow interception by your CA certificate even when this is actively blocked.
+* On Android, as a fallback: auto-detection of remaining pinning failures, to attempt auto-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly).
 
-To get started:
+## Android Getting Started Guide
 
 1. Start your MitM proxy (e.g. [HTTP Toolkit](https://httptoolkit.com/android/)), and set up your rooted Android device or emulator, connected to ADB.
 2. Find your MitM proxy's port (e.g. 8000) and its CA certificate in PEM format
@@ -28,7 +28,7 @@ To get started:
     * For example: download the relevant `frida-server` from [github.com/frida/frida](https://github.com/frida/frida/releases/latest), extract it, `adb push` it to your device, and then run it with the following 4 commands: `adb shell`, `su`, `chmod +x /.../frida-server`, `/.../frida-server`.
     * If you have issues, remember to check the device is on & connected (using `adb devices`) before running commands. Note that Frida will only run on the device as root, which is what `su` provides in the example above, when run on a rooted device. To check you are root after running `su` or similar, check that running `whoami` in the shell prints `root`.
 5. Find the package id for the app you're interested in (for a quick test, try using [github.com/httptoolkit/android-ssl-pinning-demo](https://github.com/httptoolkit/android-ssl-pinning-demo) - the package id is `tech.httptoolkit.pinning_demo`)
-6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is (if you are on Linux):
+6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is:
     ```bash
     frida -U \
         -l ./config.js \
@@ -39,13 +39,37 @@ To get started:
         -l ./android/android-certificate-unpinning-fallback.js \
         -f $PACKAGE_ID
     ```
-7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-android-unpinning/issues/new) and help make these scripts even better.
+7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
+
+## iOS Getting Started Guide
+
+1. Start your MitM proxy (e.g. [HTTP Toolkit](https://httptoolkit.com/)), and set up your jailbroken iOS device, connected to your computer.
+2. Find your MitM proxy's port (e.g. 8000) and its CA certificate in PEM format
+    * The CA certificate should start with `-----BEGIN CERTIFICATE-----`. You can open it with a text editor to see and extract this content.
+    * In HTTP Toolkit, both details can be found in the 'Anything' option on the Intercept page.
+3. Open `config.js`, and add those details:
+    * `CERT_PEM`: your CA certificate in PEM format.
+    * `PROXY_PORT`: the proxy's port
+    * `PROXY_HOST`: the address of your proxy, from the perspective of your device
+4. Install & start Frida on your device
+    * The steps here may depend on your specific device & configuration, but this is generally available via Cydia/Sileo etc using `https://build.frida.re` as a package source.
+    * Ensure you can run `frida-ps -Uai` on your computer to confirm this is working correctly.
+5. Find the id for the app you're interested in via `frida-ps -Uai` (for a quick test, try using [github.com/httptoolkit/ios-ssl-pinning-demo](https://github.com/httptoolkit/ios-ssl-pinning-demo) - the id is `com.httptoolkit.ios-pinning-demo`)
+6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for iOS a good command to start with is:
+    ```bash
+    frida -U \
+        -l ./config.js \
+        -l ./ios/ios-connect-hook.js \
+        -l ./ios/ios-tls-override.js \
+        -f $APP_ID
+    ```
+7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
 
 ## The Scripts
 
-The command above uses all the scripts, but you can generally use any subset you like, although in almost all cases you will want to include `config.js` as the first script (this defines some variables that are used by other scripts).
+The commands above use all the relevant scripts, but you can generally use any subset you like, although in almost all cases you will want to include `config.js` as the first script (this defines some variables that are used by other scripts).
 
-For example, to do unpinning alone, when handling proxy & certificate configuration elsewhere and without obfuscation fallbacks, you could just run:
+For example, to do unpinning alone on Android, when handling proxy & certificate configuration elsewhere and without obfuscation fallbacks, you could just run:
 
 ```bash
 frida -U \
@@ -69,7 +93,11 @@ Each script includes detailed documentation on what it does and how it works in 
 
 * `native-connect-hook.js`
 
-    A low-level hook for all network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
+    Captures all network traffic directly, routing all connections to the configured proxy host & port.
+
+    This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
+
+    This hook applies to libc, and works for Android, Linux, and many related environments (but not iOS or Mac).
 
 * `android/`
 
@@ -88,6 +116,20 @@ Each script includes detailed documentation on what it does and how it works in 
     * `android-certificate-unpinning-fallback.js`
 
         Detects unhandled certificate validation failures, and attempts to handle unknown unrecognized cases with auto-generated fallback patches. This is more experimental and could be slightly unpredictable, but is very helpful for obfuscated cases, and in general will either fix pinning issues (after one initial failure) or will at least highlight code for further reverse engineering in the Frida log output. This script shares some logic with `android-certificate-unpinning.js`, and cannot be used standalone - if you want to use this script, you'll need to include the non-fallback unpinning script too.
+
+* `ios/`
+
+    * `ios-connect-hook.js`
+
+        Captures all iOS network traffic directly, routing all connections to the configured proxy host & port.
+
+        This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
+
+    * `ios-tls-override.js`
+
+        Modifies all TLS validation on iOS to trust your configured CA certificate.
+
+        This effectively trusts your CA for all certificates, and disables all certificate pinning, certificate transparency and other restrictions for your CA. Note that unlike many other Frida hooks elsewhere this does _not_ disable TLS validation completely (which is very insecure). Instead, it overrides validation to ensure that all connections using your specific CA certificate are trusted, without relaxing validation to allow interception by 3rd parties.
 
 ---
 
