@@ -35,7 +35,7 @@ if (!connectFn) { // Should always be set, but just in case
             const sockType = Socket.type(fd);
 
             const addrPtr = ptr(args[1]);
-            const addrLen = args[2].toInt32(); // TODO: Probably not right?
+            const addrLen = args[2].toInt32();
             const addrData = addrPtr.readByteArray(addrLen);
 
             if (sockType === 'tcp' || sockType === 'tcp6') {
@@ -70,11 +70,7 @@ if (!connectFn) { // Should always be set, but just in case
 
                 // Otherwise, it's an unintercepted connection that should be captured:
 
-                console.log(`Manually intercepting connection to ${
-                    isIPv6
-                        ? `[${[...hostBytes].map(x => x.toString(16)).join(':')}]`
-                        : [...hostBytes].map(x => x.toString()).join('.')
-                }:${port}`);
+                console.log(`Manually intercepting connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
 
                 // Overwrite the port with the proxy port:
                 portAddrBytes.setUint16(0, PROXY_PORT, false); // Big endian
@@ -113,6 +109,29 @@ if (!connectFn) { // Should always be set, but just in case
         : 'all unrecognized'
     } TCP connections to ${PROXY_HOST}:${PROXY_PORT} ==`);
 }
+
+const getReadableAddress = (
+    /** @type {Uint8Array} */ hostBytes,
+    /** @type {boolean} */ isIPv6
+) => {
+    if (!isIPv6) {
+        // Return simple a.b.c.d IPv4 format:
+        return [...hostBytes].map(x => x.toString()).join('.');
+    }
+
+    if (
+        hostBytes.slice(0, 10).every(b => b === 0) &&
+        hostBytes.slice(10, 12).every(b => b === 255)
+    ) {
+        // IPv4-mapped IPv6 address - print as IPv4 for readability
+        return '::ffff:'+[...hostBytes.slice(12)].map(x => x.toString()).join('.');
+    }
+
+    else {
+        // Real IPv6:
+        return `[${[...hostBytes].map(x => x.toString(16)).join(':')}]`;
+    }
+};
 
 const areArraysEqual = (arrayA, arrayB) => {
     if (arrayA.length !== arrayB.length) return false;
