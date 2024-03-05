@@ -40,43 +40,20 @@ const TARGET_LIBS = [
 ];
 
 TARGET_LIBS.forEach((targetLib) => {
-    let loaded = false;
-
-    try {
-        Module.ensureInitialized(targetLib.name);
-        loaded = true;
-    } catch (e) {
-        try {
-            Module.load(targetLib.name);
-            loaded = true;
-        } catch (e) {
-            if (targetLib.name === 'libboringssl.dylib' && Process.platform === 'darwin') {
-                // On iOS, we expect this to always work, so print a warning if we ever have to
-                // skip this TLS patching process.
-                console.log(`\n !!! --- Could not load ${targetLib.name} to hook TLS --- !!!`);
-            }
-        }
-    }
-
-    if (loaded === true) {
-        patchTargetLib(targetLib.name);
+    waitForModule(targetLib.name, (moduleName) => {
+        patchTargetLib(moduleName);
         targetLib.hooked = true;
-    }
-});
-
-// Watch for any other target libraries to be loaded later on:
-new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((dlopen) => {
-    Interceptor.attach(dlopen.address, {
-        onEnter(args) {
-            const moduleName = args[0].readCString();
-            TARGET_LIBS.filter(({ hooked }) => !hooked).forEach((targetLib) => {
-                if (moduleName.includes(targetLib.name)) {
-                    patchTargetLib(targetLib.name);
-                    targetLib.hooked = true;
-                }
-            });
-        }
     });
+
+    if (
+        targetLib.name === 'libboringssl.dylib' &&
+        Process.platform === 'darwin' &&
+        !targetLib.hooked
+    ) {
+        // On iOS, we expect this to always work immediately, so print a warning if we
+        // ever have to skip this TLS patching process.
+        console.log(`\n !!! --- Could not load ${targetLib.name} to hook TLS --- !!!`);
+    }
 });
 
 function patchTargetLib(targetLib) {

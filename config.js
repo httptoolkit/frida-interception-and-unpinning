@@ -150,3 +150,50 @@ function pemToDer(input) {
 }
 
 const CERT_DER = pemToDer(CERT_PEM);
+
+function waitForModule(moduleName, callback) {
+    if (Array.isArray(moduleName)) {
+        moduleName.forEach(module => waitForModule(module, callback));
+    }
+
+    try {
+        Module.ensureInitialized(moduleName);
+        callback(moduleName);
+        return;
+    } catch (e) {
+        try {
+            Module.load(moduleName);
+            callback(moduleName);
+            return;
+        } catch (e) {}
+    }
+
+    MODULE_LOAD_CALLBACKS[moduleName] = callback;
+}
+
+const getModuleName = (nameOrPath) => {
+    const endOfPath = nameOrPath.lastIndexOf('/');
+    return nameOrPath.slice(endOfPath + 1);
+};
+
+const MODULE_LOAD_CALLBACKS = {};
+new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((dlopen) => {
+    Interceptor.attach(dlopen.address, {
+        onEnter(args) {
+            const moduleArg = args[0].readCString();
+            if (moduleArg) {
+                this.moduleName = getModuleName(moduleArg);
+            }
+        },
+        onLeave() {
+            if (!this.moduleName) return;
+
+            Object.keys(MODULE_LOAD_CALLBACKS).forEach((key) => {
+                if (this.moduleName === key) {
+                    MODULE_LOAD_CALLBACKS[key](this.moduleName);
+                    delete MODULE_LOAD_CALLBACKS[key];
+                }
+            });
+        }
+    });
+});
