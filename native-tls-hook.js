@@ -35,7 +35,8 @@
 const TARGET_LIBS = [
     { name: 'libboringssl.dylib', hooked: false }, // iOS primary TLS implementation
     { name: 'libsscronet.so', hooked: false }, // Cronet on Android
-    { name: 'boringssl', hooked: false } // Bundled by some apps e.g. TikTok on iOS
+    { name: 'boringssl', hooked: false }, // Bundled by some apps e.g. TikTok on iOS
+    { name: 'libssl.so', hooked: false }, // Native OpenSSL in Android
 ];
 
 TARGET_LIBS.forEach((targetLib) => {
