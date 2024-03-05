@@ -33,6 +33,7 @@ The scripts can automatically handle:
     frida -U \
         -l ./config.js \
         -l ./native-connect-hook.js \
+        -l ./native-tls-hook.js \
         -l ./android/android-proxy-override.js \
         -l ./android/android-system-certificate-injection.js \
         -l ./android/android-certificate-unpinning.js \
@@ -60,7 +61,7 @@ The scripts can automatically handle:
     frida -U \
         -l ./config.js \
         -l ./ios/ios-connect-hook.js \
-        -l ./ios/ios-tls-override.js \
+        -l ./native-tls-hook.js \
         -f $APP_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
@@ -99,6 +100,14 @@ Each script includes detailed documentation on what it does and how it works in 
 
     This hook applies to libc, and works for Android, Linux, and many related environments (but not iOS or Mac).
 
+* `native-tls-hook.js`
+
+    Modifies all TLS validation for BoringSSL-based libraries to trust your configured CA certificate.
+
+    Notably, this hooks the built-in BoringSSL APIs on iOS, which is the normal way that iOS handles TLS certificate validation (so this is sufficient for almost all iOS HTTPS interception) but this is also used in a few other cases on both iOS & Android too.
+
+    This effectively trusts your CA for all certificates, and disables all certificate pinning, certificate transparency and other restrictions for your CA. Note that unlike many other Frida hooks elsewhere this does _not_ disable TLS validation completely (which is very insecure). Instead, it overrides validation to ensure that all connections using your specific CA certificate are trusted, without relaxing validation to allow interception by 3rd parties.
+
 * `android/`
 
     * `android-proxy-override.js`
@@ -124,12 +133,6 @@ Each script includes detailed documentation on what it does and how it works in 
         Captures all iOS network traffic directly, routing all connections to the configured proxy host & port.
 
         This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
-
-    * `ios-tls-override.js`
-
-        Modifies all TLS validation on iOS to trust your configured CA certificate.
-
-        This effectively trusts your CA for all certificates, and disables all certificate pinning, certificate transparency and other restrictions for your CA. Note that unlike many other Frida hooks elsewhere this does _not_ disable TLS validation completely (which is very insecure). Instead, it overrides validation to ensure that all connections using your specific CA certificate are trusted, without relaxing validation to allow interception by 3rd parties.
 
 ---
 
