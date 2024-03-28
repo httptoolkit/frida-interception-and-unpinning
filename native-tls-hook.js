@@ -37,11 +37,16 @@ const TARGET_LIBS = [
     { name: 'libsscronet.so', hooked: false }, // Cronet on Android
     { name: 'boringssl', hooked: false }, // Bundled by some apps e.g. TikTok on iOS
     { name: 'libssl.so', hooked: false }, // Native OpenSSL in Android
+    { name: 'libliger.so', hooked: false }, // Facebook proxygen
 ];
 
 TARGET_LIBS.forEach((targetLib) => {
     waitForModule(targetLib.name, (moduleName) => {
-        patchTargetLib(moduleName);
+        if(moduleName === 'libliger.so'){
+            hook_proxygen_SSLVerification(moduleName);
+        }else{
+            patchTargetLib(moduleName);
+        }
         targetLib.hooked = true;
     });
 
@@ -55,6 +60,23 @@ TARGET_LIBS.forEach((targetLib) => {
         console.log(`\n !!! --- Could not load ${targetLib.name} to hook TLS --- !!!`);
     }
 });
+
+function hook_proxygen_SSLVerification(library) {
+    const functionName = "_ZN8proxygen15SSLVerification17verifyWithMetricsEbP17x509_store_ctx_stRKNSt6__ndk112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEEPNS0_31SSLFailureVerificationCallbacksEPNS0_31SSLSuccessVerificationCallbacksERKNS_15TimeUtilGenericINS3_6chrono12steady_clockEEERNS_10TraceEventE";
+
+    try {
+        const f = Module.getExportByName(library, functionName);
+
+        Interceptor.attach(f, {
+            onLeave: function (retvalue) {
+                retvalue.replace(1);
+            }
+        });
+        console.log(`[+] Hooked function: ${functionName}`);
+    } catch (err) {
+        console.log(`[-] Failed to hook function: ${functionName}: ${err.toString()}`);
+    }
+}
 
 function patchTargetLib(targetLib) {
     // Get the peer certificates from an SSL pointer. Returns a pointer to a STACK_OF(CRYPTO_BUFFER)
@@ -191,4 +213,3 @@ function patchTargetLib(targetLib) {
         console.log(`Patched ${customVerifyAddrs.length} custom_verify methods, but couldn't find get_psk_identity`);
     }
 }
-
