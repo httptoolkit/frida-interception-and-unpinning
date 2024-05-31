@@ -134,6 +134,12 @@ Each script includes detailed documentation on what it does and how it works in 
 
         This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
 
+* `utilities/test-ip-connectivity.js`
+
+    You probably don't want to use this normally as part of interception itself, but it can be very useful as part of your configuration setup.
+
+    This script allows you to configure a list of possible IP addresses and a target port, and will then send the results of those connectivity tests for each IP:PORT address back to the Frida client, so you can confirm which IP address of a proxy host (e.g. your computer) is reachable from your target device.
+
 ---
 
 These scripts are part of [a broader HTTP Toolkit project](https://httptoolkit.com/blog/frida-mobile-interception-funding/), funded through the [NGI Zero Entrust Fund](https://nlnet.nl/entrust), established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more on the [NLnet project page](https://nlnet.nl/project/F3-AppInterception#ack).
