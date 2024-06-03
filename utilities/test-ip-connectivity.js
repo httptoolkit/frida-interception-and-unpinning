@@ -1,11 +1,9 @@
 /**
- * This script is a little different from the others, and is designed to help with setup,
- * particularly in automated scenarios, rather than supporting interception/unpinning/etc.
- *
- * Using this script, you can provide a list of IP addresses and a port, and the script will
- * send messages back to your Frida client for each IP:PORT address that is reachable from
- * the target device. When your proxy is running on a remote device from the target host,
- * this can be useful to work out which proxy IP address should be used.
+ * This script can be useful as part of a pre-setup or automated configuration process,
+ * where you don't know why IP address is best used to reach your proxy server from the
+ * target device. You can run this script first with a list of IP addresses, and wait for
+ * the 'connected' message to confirm the working IP (or 'connection-failed' if none work)
+ * before then injecting the config script and the rest of your script code.
  *
  * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
  * SPDX-License-Identifier: AGPL-3.0-or-later
@@ -44,12 +42,27 @@ async function testAddress(ip, port) {
     }
 }
 
+let completed = false;
+let testsCompleted = 0;
 IP_ADDRESSES_TO_TEST.forEach(async (ip) => {
     const result = await testAddress(ip, TARGET_PORT);
-    send({
-        type: 'connectivity-result',
-        ip,
-        port: TARGET_PORT,
-        result
-    });
+    testsCompleted += 1;
+
+    if (completed) return; // Ignore results after the first connection
+
+    if (result) {
+        completed = true;
+        send({
+            type: 'connected',
+            ip,
+            port: TARGET_PORT
+        });
+    }
+
+    if (testsCompleted === IP_ADDRESSES_TO_TEST.length && !completed) {
+        completed = true;
+        send({
+            type: 'connection-failed'
+        });
+    }
 });
