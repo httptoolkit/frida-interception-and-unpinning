@@ -29,11 +29,11 @@ const nw_endpoint_create_host = new NativeFunction(
     'pointer', ['pointer', 'pointer']
 );
 
+const newHostStr = Memory.allocUtf8String(PROXY_HOST);
+const newPortStr = Memory.allocUtf8String(PROXY_PORT.toString());
+
 Interceptor.attach(nw_connection_create, {
     onEnter: function (args) {
-        const newHostStr = Memory.allocUtf8String(PROXY_HOST);
-        const newPortStr = Memory.allocUtf8String(PROXY_PORT.toString());
-
         // Replace the endpoint argument entirely with our own:
         args[0] = nw_endpoint_create_host(newHostStr, newPortStr);
     }
