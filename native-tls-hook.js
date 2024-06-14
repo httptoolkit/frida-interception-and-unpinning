@@ -90,6 +90,7 @@ function patchTargetLib(targetLib) {
     );
 
     const SSL_VERIFY_OK = 0x0;
+    const SSL_VERIFY_INVALID = 0x1;
 
     // We cache the verification callbacks we create. In general (in testing, 100% of the time) the
     // 'real' callback is always the exact same address, so this is much more efficient than creating
@@ -98,13 +99,15 @@ function patchTargetLib(targetLib) {
 
     const buildVerificationCallback = (realCallbackAddr) => {
         if (!verificationCallbackCache[realCallbackAddr]) {
-            const realCallback = new NativeFunction(realCallbackAddr, 'int', ['pointer','pointer']);
+            const realCallback = realCallbackAddr
+                ? new NativeFunction(realCallbackAddr, 'int', ['pointer','pointer'])
+                : () => SSL_VERIFY_INVALID; // Callback can be null - treat as invalid (=our validation only)
 
             const hookedCallback = new NativeCallback(function (ssl, out_alert) {
                 let realResult = false;
 
                 if (targetLib !== 'libboringssl.dylib') {
-                    // Cronet assumes its callback is always calls, and crashes if not. iOS's BoringSSL
+                    // Cronet assumes its callback is always called, and crashes if not. iOS's BoringSSL
                     // meanwhile seems to use some negative checks in its callback, and rejects the
                     // connection independently of the return value here if it's called with a bad cert.
                     // End result: we *only sometimes* proactively call the callback.
