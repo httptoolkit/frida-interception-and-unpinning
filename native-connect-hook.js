@@ -23,7 +23,8 @@ const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_B
 
 const connectFn = (
     Module.findExportByName('libc.so', 'connect') ?? // Android
-    Module.findExportByName('libc.so.6', 'connect') // Linux
+    Module.findExportByName('libc.so.6', 'connect') ?? // Linux
+    Module.findExportByName('libsystem_kernel.dylib', 'connect') // iOS
 );
 
 if (!connectFn) { // Should always be set, but just in case

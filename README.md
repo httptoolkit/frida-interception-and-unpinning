@@ -62,6 +62,7 @@ The scripts can automatically handle:
         -l ./config.js \
         -l ./ios/ios-connect-hook.js \
         -l ./native-tls-hook.js \
+        -l ./native-connect-hook.js \
         -f $APP_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
@@ -98,7 +99,7 @@ Each script includes detailed documentation on what it does and how it works in 
 
     This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
 
-    This hook applies to libc, and works for Android, Linux, and many related environments (but not iOS or Mac).
+    This hook applies to libc, and works for Android, Linux, iOS, and many other related environments.
 
 * `native-tls-hook.js`
 
@@ -138,7 +139,7 @@ Each script includes detailed documentation on what it does and how it works in 
 
     You probably don't want to use this normally as part of interception itself, but it can be very useful as part of your configuration setup.
 
-    This script allows you to configure a list of possible IP addresses and a target port, and have the process test each address, and send a message to the Frida client for the first reachable address provided. This can be useful for automated configuration processeses, if you don't know which IP address is best to use to reach the proxy server (your computer) from the target device (your phone).
+    This script allows you to configure a list of possible IP addresses and a target port, and have the process test each address, and send a message to the Frida client for the first reachable address provided. This can be useful for automated configuration processes, if you don't know which IP address is best to use to reach the proxy server (your computer) from the target device (your phone).
 
 ---
 
