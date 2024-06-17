@@ -103,15 +103,27 @@ function patchTargetLib(targetLib) {
                 ? new NativeFunction(realCallbackAddr, 'int', ['pointer','pointer'])
                 : () => SSL_VERIFY_INVALID; // Callback can be null - treat as invalid (=our validation only)
 
+            let pendingCheckThreads = new Set();
+
             const hookedCallback = new NativeCallback(function (ssl, out_alert) {
-                let realResult = false;
+                let realResult = false; // False = not yet called, 0/1 = call result
+
+                const threadId = Process.getCurrentThreadId();
+                const alreadyHaveLock = pendingCheckThreads.has(threadId);
+
+                // We try to have only one thread running these checks at a time, as parallel calls
+                // here on the same underlying callback seem to crash in some specific scenarios
+                while (pendingCheckThreads.size > 0 && !alreadyHaveLock) {
+                    Thread.sleep(0.01);
+                }
+                pendingCheckThreads.add(threadId);
 
                 if (targetLib !== 'libboringssl.dylib') {
                     // Cronet assumes its callback is always called, and crashes if not. iOS's BoringSSL
                     // meanwhile seems to use some negative checks in its callback, and rejects the
                     // connection independently of the return value here if it's called with a bad cert.
                     // End result: we *only sometimes* proactively call the callback.
-                    realResult = realCallback(ssl, out_alert)
+                    realResult = realCallback(ssl, out_alert);
                 }
 
                 // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
@@ -138,16 +150,18 @@ function patchTargetLib(targetLib) {
                     const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
 
                     if (certData.every((byte, j) => CERT_DER[j] === byte)) {
+                        if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
                         return SSL_VERIFY_OK;
                     }
                 }
 
                 // No matched peer - fallback to the provided callback instead:
-                if (realResult !== false) {
-                    return realResult;
-                } else {
-                    return realCallback(ssl, out_alert);
+                if (realResult === false) { // Haven't called it yet
+                    realResult = realCallback(ssl, out_alert);
                 }
+
+                if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
+                return realResult;
             }, 'int', ['pointer','pointer']);
 
             verificationCallbackCache[realCallbackAddr] = hookedCallback;
