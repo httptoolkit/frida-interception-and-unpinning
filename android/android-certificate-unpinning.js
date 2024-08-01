@@ -130,6 +130,22 @@ const PINNING_FIXES = {
         }
     ],
 
+     // --- Native Conscrypt TrustManagerImpl
+     'com.android.org.conscrypt.TrustManagerImpl': [
+        {
+            methodName: 'verifyChain',
+            replacement: () => function(untrustedChain, trustAnchorChain, host, clientAuth, ocspData, tlsSctData) {
+                return untrustedChain;
+            }
+        },
+        {
+            methodName: 'checkTrustedRecursive',
+            replacement: () => function(certs, host, clientAuth, untrustedChain, trustAnchorChain, used) {
+                return Java.use("java.util.ArrayList").$new();
+            }
+        }
+    ],
+
     // --- Native pinning configuration loading (used for configuration by many libraries)
 
     'android.security.net.config.NetworkSecurityConfig': [
