@@ -31,14 +31,15 @@ The scripts can automatically handle:
 6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is:
     ```bash
     frida -U \
-        -l ./config.js \
-        -l ./native-connect-hook.js \
-        -l ./native-tls-hook.js \
-        -l ./android/android-proxy-override.js \
-        -l ./android/android-system-certificate-injection.js \
-        -l ./android/android-certificate-unpinning.js \
-        -l ./android/android-certificate-unpinning-fallback.js \
-        -f $PACKAGE_ID
+    -l ./config.js \
+    -l ./native-connect-hook.js \
+    -l ./native-tls-hook.js \
+    -l ./android/android-proxy-override.js \
+    -l ./android/android-system-certificate-injection.js \
+    -l ./android/android-certificate-unpinning.js \
+    -l ./android/android-certificate-unpinning-fallback.js \
+    -l ./android/root_detection_bypass.js \
+    -f $PACKAGE_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
 
@@ -141,7 +142,14 @@ Each script includes detailed documentation on what it does and how it works in 
 
     This script allows you to configure a list of possible IP addresses and a target port, and have the process test each address, and send a message to the Frida client for the first reachable address provided. This can be useful for automated configuration processes, if you don't know which IP address is best to use to reach the proxy server (your computer) from the target device (your phone).
 
----
+* `android/root_detection_bypass.js`
+
+    Disables common root detection checks across native and Java layers to prevent detection of rooted Android devices.
+
+    This script intercepts file system access, shell commands, and package lookups for known root indicators (like `su`, Magisk, and related apps), and fakes key system properties (`ro.secure`, `ro.debuggable`, etc.) to simulate a production environment.
+
+    It blocks suspicious behavior like file existence checks and shell command execution, helping evade detection in apps using both standard and advanced root checks.
+
 
 These scripts are part of [a broader HTTP Toolkit project](https://httptoolkit.com/blog/frida-mobile-interception-funding/), funded through the [NGI Zero Entrust Fund](https://nlnet.nl/entrust), established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more on the [NLnet project page](https://nlnet.nl/project/F3-AppInterception#ack).
 
