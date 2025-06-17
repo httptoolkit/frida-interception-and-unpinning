@@ -1,5 +1,11 @@
 (() => {
-    'use strict';
+    let loggedRootDetectionWarning = false;
+    function logFirstRootDetection() {
+        if (!loggedRootDetectionWarning) {
+            console.log(" => Blocked possible root detection checks. Enable DEBUG_MODE for more details.");
+            loggedRootDetectionWarning = true;
+        }
+    }
 
     const CONFIG = {
         fingerprint: "google/crosshatch/crosshatch:10/QQ3A.200805.001/6578210:user/release-keys",
@@ -51,7 +57,7 @@
             "/system/xbin/busybox",
             "/system/app/Kinguser.apk"
         ]),
-        
+
         packages: new Set([
             "com.noshufou.android.su",
             "com.noshufou.android.su.elite",
@@ -93,16 +99,6 @@
         ])
     };
 
-    const Logger = {
-        prefix: "RootBypass: ",
-        info(message) {
-            console.log(`${this.prefix}${message}`);
-        },
-        error(message, error) {
-            console.error(`${this.prefix}ERROR: ${message}`, error || "");
-        }
-    };
-
     function bypassNativeFileCheck() {
         const fopen = Module.findExportByName("libc.so", "fopen");
         if (fopen) {
@@ -114,7 +110,9 @@
                     if (retval.toInt32() !== 0) {
                         const path = this.path.toLowerCase();
                         if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
-                            Logger.info(`Blocked fopen: ${this.path}`);
+                            if (DEBUG_MODE) {
+                                console.log(`Blocked possible root-detection: fopen ${this.path}`);
+                            } else logFirstRootDetection();
                             retval.replace(ptr(0x0));
                         }
                     }
@@ -132,7 +130,9 @@
                     if (retval.toInt32() === 0) {
                         const path = this.path.toLowerCase();
                         if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
-                            Logger.info(`Blocked access: ${this.path}`);
+                            if (DEBUG_MODE) {
+                                console.debug(`Blocked possible root detection: access ${this.path}`);
+                            } else logFirstRootDetection();
                             retval.replace(ptr(-1));
                         }
                     }
@@ -149,7 +149,9 @@
                 onLeave(retval) {
                     const path = this.path.toLowerCase();
                     if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
-                        Logger.info(`Blocked stat: ${this.path}`);
+                        if (DEBUG_MODE) {
+                            console.debug(`Blocked possible root detection: stat ${this.path}`);
+                        } else logFirstRootDetection();
                         retval.replace(ptr(-1));
                     }
                 }
@@ -165,7 +167,9 @@
                 onLeave(retval) {
                     const path = this.path.toLowerCase();
                     if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
-                        Logger.info(`Blocked lstat: ${this.path}`);
+                        if (DEBUG_MODE) {
+                            console.debug(`Blocked possible root detection: lstat ${this.path}`);
+                        } else logFirstRootDetection();
                         retval.replace(ptr(-1));
                     }
                 }
@@ -178,7 +182,9 @@
         UnixFileSystem.checkAccess.implementation = function(file, access) {
             const filename = file.getAbsolutePath();
             if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
-                Logger.info(`Blocked file access check: ${filename}`);
+                if (DEBUG_MODE) {
+                    console.debug(`Blocked possible root detection: filesystem access check for ${filename}`);
+                } else logFirstRootDetection();
                 return false;
             }
             return this.checkAccess(file, access);
@@ -188,7 +194,9 @@
         File.exists.implementation = function() {
             const filename = this.getAbsolutePath();
             if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
-                Logger.info(`Blocked file exists check: ${filename}`);
+                if (DEBUG_MODE) {
+                    console.debug(`Blocked possible root detection: file exists check for ${filename}`);
+                } else logFirstRootDetection();
                 return false;
             }
             return this.exists();
@@ -197,7 +205,9 @@
         File.length.implementation = function() {
             const filename = this.getAbsolutePath();
             if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
-                Logger.info(`Blocked file length check: ${filename}`);
+                if (DEBUG_MODE) {
+                    console.debug(`Blocked possible root detection: file length check for ${filename}`);
+                } else logFirstRootDetection();
                 return 0;
             }
             return this.length();
@@ -207,7 +217,9 @@
         FileInputStream.$init.overload('java.io.File').implementation = function(file) {
             const filename = file.getAbsolutePath();
             if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
-                Logger.info(`Blocked FileInputStream creation: ${filename}`);
+                if (DEBUG_MODE) {
+                    console.debug(`Blocked possible root detection: file stream for ${filename}`);
+                } else logFirstRootDetection();
                 throw new Java.use("java.io.FileNotFoundException").$new(filename);
             }
             return this.$init(file);
@@ -215,60 +227,63 @@
     }
 
     function setProp() {
-        try {
-            const Build = Java.use("android.os.Build");
-            const fields = {
-                "TAGS": "release-keys",
-                "TYPE": "user",
-                "FINGERPRINT": CONFIG.fingerprint
-            };
+        const Build = Java.use("android.os.Build");
+        const fields = {
+            "TAGS": "release-keys",
+            "TYPE": "user",
+            "FINGERPRINT": CONFIG.fingerprint
+        };
 
-            Object.entries(fields).forEach(([field, value]) => {
-                const fieldObj = Build.class.getDeclaredField(field);
-                fieldObj.setAccessible(true);
-                fieldObj.set(null, value);
-            });
+        Object.entries(fields).forEach(([field, value]) => {
+            const fieldObj = Build.class.getDeclaredField(field);
+            fieldObj.setAccessible(true);
+            fieldObj.set(null, value);
+        });
 
-            const system_property_get = Module.findExportByName("libc.so", "__system_property_get");
-            if (system_property_get) {
-                Interceptor.attach(system_property_get, {
-                    onEnter(args) {
-                        this.key = args[0].readCString();
-                        this.ret = args[1];
-                    },
-                    onLeave(retval) {
-                        const secureValue = CONFIG.secureProps[this.key];
-                        if (secureValue !== undefined) {
-                            const valuePtr = Memory.allocUtf8String(secureValue);
-                            Memory.copy(this.ret, valuePtr, secureValue.length + 1);
-                        }
-                    }
-                });
-            }
-
-            const Runtime = Java.use('java.lang.Runtime');
-            Runtime.exec.overload('java.lang.String').implementation = function(cmd) {
-                if (cmd.startsWith("getprop ")) {
-                    const prop = cmd.split(" ")[1];
-                    if (CONFIG.secureProps[prop]) {
-                        Logger.info(`Blocked getprop command: ${cmd}`);
-                        return null;
+        const system_property_get = Module.findExportByName("libc.so", "__system_property_get");
+        if (system_property_get) {
+            Interceptor.attach(system_property_get, {
+                onEnter(args) {
+                    this.key = args[0].readCString();
+                    this.ret = args[1];
+                },
+                onLeave(retval) {
+                    const secureValue = CONFIG.secureProps[this.key];
+                    if (secureValue !== undefined) {
+                        if (DEBUG_MODE) {
+                            console.debug(`Blocked possible root detection: system_property_get ${this.key}`);
+                        } else logFirstRootDetection();
+                        const valuePtr = Memory.allocUtf8String(secureValue);
+                        Memory.copy(this.ret, valuePtr, secureValue.length + 1);
                     }
                 }
-                return this.exec(cmd);
-            };
-        } catch (error) {
-            Logger.error("Error setting up build properties bypass", error);
+            });
         }
+
+        const Runtime = Java.use('java.lang.Runtime');
+        Runtime.exec.overload('java.lang.String').implementation = function(cmd) {
+            if (cmd.startsWith("getprop ")) {
+                const prop = cmd.split(" ")[1];
+                if (CONFIG.secureProps[prop]) {
+                    if (DEBUG_MODE) {
+                        console.debug(`Blocked possible root detection: getprop ${prop}`);
+                    } else logFirstRootDetection();
+                    return null;
+                }
+            }
+            return this.exec(cmd);
+        };
     }
 
     function bypassRootPackageCheck() {
         const ApplicationPackageManager = Java.use("android.app.ApplicationPackageManager");
-                
+
         ApplicationPackageManager.getPackageInfo.overload('java.lang.String', 'int').implementation = function(str, i) {
             if (ROOT_INDICATORS.packages.has(str)) {
-                Logger.info(`Blocked package check: ${str}`);
-                str = "com.nonexistent.package";
+                if (DEBUG_MODE) {
+                    console.debug(`Blocked possible root detection: package info for ${str}`);
+                } else logFirstRootDetection();
+                str = "invalid.example.nonexistent.package";
             }
             return this.getPackageInfo(str, i);
         };
@@ -282,55 +297,60 @@
     }
 
     function bypassShellCommands() {
-        try {
-            const ProcessBuilder = Java.use('java.lang.ProcessBuilder');
-            ProcessBuilder.command.overload('java.util.List').implementation = function(commands) {
-                const cmdList = commands.toArray();
-                if (cmdList.length > 0) {
-                    const cmd = cmdList[0].toString();
-                    if (ROOT_INDICATORS.commands.has(cmd) || (cmdList.length > 1 && ROOT_INDICATORS.binaries.has(cmdList[1].toString()))) {
-                        Logger.info(`Blocked ProcessBuilder command: ${cmdList.join(' ')}`);
-                        return this.command(Java.use("java.util.Arrays").asList([""]));
-                    }
+        const ProcessBuilder = Java.use('java.lang.ProcessBuilder');
+        ProcessBuilder.command.overload('java.util.List').implementation = function(commands) {
+            const cmdArray = commands.toArray();
+            if (cmdArray.length > 0) {
+                const cmd = cmdArray[0].toString();
+                if (ROOT_INDICATORS.commands.has(cmd) || (cmdArray.length > 1 && ROOT_INDICATORS.binaries.has(cmdArray[1].toString()))) {
+                    if (DEBUG_MODE) {
+                        console.debug(`Blocked possible root detection: ProcessBuilder with ${cmdArray.join(' ')}`);
+                    } else logFirstRootDetection();
+                    return this.command(Java.use("java.util.Arrays").asList([""]));
                 }
-                return this.command(commands);
-            };
+            }
+            return this.command(commands);
+        };
 
-            const Runtime = Java.use('java.lang.Runtime');
-            Runtime.exec.overload('[Ljava.lang.String;').implementation = function(cmdArray) {
-                if (cmdArray.length > 0) {
-                    const cmd = cmdArray[0];
-                    if (ROOT_INDICATORS.commands.has(cmd) || (cmdArray.length > 1 && ROOT_INDICATORS.binaries.has(cmdArray[1]))) {
-                        Logger.info(`Blocked Runtime.exec command array: ${cmdArray.join(' ')}`);
-                        return this.exec([""]);
-                    }
+        const Runtime = Java.use('java.lang.Runtime');
+        Runtime.exec.overload('[Ljava.lang.String;').implementation = function(cmdArray) {
+            if (cmdArray.length > 0) {
+                const cmd = cmdArray[0];
+                if (ROOT_INDICATORS.commands.has(cmd) || (cmdArray.length > 1 && ROOT_INDICATORS.binaries.has(cmdArray[1]))) {
+                    if (DEBUG_MODE) {
+                        console.debug(`Blocked possible root detection: Runtime.exec for ${cmdArray.join(' ')}`);
+                    } else logFirstRootDetection();
+                    return this.exec([""]);
                 }
-                return this.exec(cmdArray);
-            };
+            }
+            return this.exec(cmdArray);
+        };
 
-            const ProcessImpl = Java.use("java.lang.ProcessImpl");
-            ProcessImpl.start.implementation = function(cmdArray, env, dir, redirects, redirectErrorStream) {
-                if (cmdArray.length > 0) {
-                    const cmd = cmdArray[0].toString();
-                    const arg = cmdArray.length > 1 ? cmdArray[1].toString() : "";
-                    
-                    if (ROOT_INDICATORS.commands.has(cmd) || ROOT_INDICATORS.binaries.has(arg)) {
-                        Logger.info(`Blocked ProcessImpl command: ${cmdArray.join(' ')}`);
-                        return ProcessImpl.start.call(this, [Java.use("java.lang.String").$new("")], env, dir, redirects, redirectErrorStream);
-                    }
+        const ProcessImpl = Java.use("java.lang.ProcessImpl");
+        ProcessImpl.start.implementation = function(cmdArray, env, dir, redirects, redirectErrorStream) {
+            if (cmdArray.length > 0) {
+                const cmd = cmdArray[0].toString();
+                const arg = cmdArray.length > 1 ? cmdArray[1].toString() : "";
+
+                if (ROOT_INDICATORS.commands.has(cmd) || ROOT_INDICATORS.binaries.has(arg)) {
+                    if (DEBUG_MODE) {
+                        console.debug(`Blocked possible root detection: ProcessImpl.start for ${cmdArray.join(' ')}`);
+                    } else logFirstRootDetection();
+                    return ProcessImpl.start.call(this, [Java.use("java.lang.String").$new("")], env, dir, redirects, redirectErrorStream);
                 }
-                return ProcessImpl.start.call(this, cmdArray, env, dir, redirects, redirectErrorStream);
-            };
-        } catch (error) {
-            Logger.error("Error setting up shell command bypass", error);
-        }
+            }
+            return ProcessImpl.start.call(this, cmdArray, env, dir, redirects, redirectErrorStream);
+        };
     }
 
-    Logger.info("Initializing root detection bypass...");
-    bypassNativeFileCheck();
-    bypassJavaFileCheck();
-    setProp();
-    bypassRootPackageCheck();
-    bypassShellCommands();
-    Logger.info("Root detection bypass initialized successfully");
+    try {
+        bypassNativeFileCheck();
+        bypassJavaFileCheck();
+        setProp();
+        bypassRootPackageCheck();
+        bypassShellCommands();
+        console.log("== Disabled Android root detection ==");
+    } catch (error) {
+        console.error("\n !!! Error setting up root detection bypass !!!", error);
+    }
 })();
