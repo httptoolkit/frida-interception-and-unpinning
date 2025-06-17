@@ -7,8 +7,9 @@
         }
     }
 
+    const BUILD_FINGERPRINT_REGEX = /^([\w.-]+\/[\w.-]+\/[\w.-]+):([\w.]+\/[\w.-]+\/[\w.-]+):(\w+\/[\w,.-]+)$/;
+
     const CONFIG = {
-        fingerprint: "google/crosshatch/crosshatch:10/QQ3A.200805.001/6578210:user/release-keys",
         secureProps: {
             "ro.secure": "1",
             "ro.debuggable": "0",
@@ -228,10 +229,32 @@
 
     function setProp() {
         const Build = Java.use("android.os.Build");
+
+        // We do a little work to make the minimum changes required to hide in the BUILD fingerprint,
+        // but otherwise keep matching the real device wherever possible.
+        const realFingerprint = Build.FINGERPRINT.value;
+
+        const fingerprintMatch = BUILD_FINGERPRINT_REGEX.exec(realFingerprint);
+        let fixedFingerprint;
+        if (fingerprintMatch) {
+            let [, device, versions, tags] = BUILD_FINGERPRINT_REGEX.exec(realFingerprint);
+            tags = 'user/release-keys'; // Should always be the case in production builds
+            if (device.includes('generic') || device.includes('sdk') || device.includes('lineage')) {
+                device = 'google/raven/raven';
+            }
+
+            fixedFingerprint = `${device}:${versions}:${tags}`;
+        } else {
+            console.warn(`Unexpected BUILD fingerprint format: ${realFingerprint}`);
+            // This should never happen in theory (the format is standard), but just in case,
+            // we use this fallback fingerprint:
+            fixedFingerprint = "google/crosshatch/crosshatch:10/QQ3A.200805.001/6578210:user/release-keys";
+        }
+
         const fields = {
             "TAGS": "release-keys",
             "TYPE": "user",
-            "FINGERPRINT": CONFIG.fingerprint
+            "FINGERPRINT": fixedFingerprint
         };
 
         Object.entries(fields).forEach(([field, value]) => {
