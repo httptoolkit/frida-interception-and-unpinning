@@ -1,3 +1,18 @@
+/**************************************************************************************************
+ *
+ * This script defines a large set of root detection bypasses for Android. Hooks included here
+ * block detection of many known root indicators, including file paths, package names, commands,
+ * notably binaries, and system properties.
+ *
+ * Enable DEBUG_MODE to see debug output for each bypassed check.
+ *
+ * Source available at https://github.com/httptoolkit/frida-interception-and-unpinning/
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
+ * SPDX-FileCopyrightText: Riyad Mondal
+ *
+ *************************************************************************************************/
+
 (() => {
     let loggedRootDetectionWarning = false;
     function logFirstRootDetection() {

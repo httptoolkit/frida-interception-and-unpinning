@@ -12,6 +12,7 @@ The scripts can automatically handle:
 * Injecting a given CA certificate into the system trust stores so they're trusted in connections by default.
 * Patching many (all?) known certificate pinning and certificate transparency tools, to allow interception by your CA certificate even when this is actively blocked.
 * On Android, as a fallback: auto-detection of remaining pinning failures, to attempt auto-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly).
+* Disabling many common root & jailbreak detections.
 
 ## Android Getting Started Guide
 
@@ -31,15 +32,15 @@ The scripts can automatically handle:
 6. Use Frida to launch the app you're interested in with the scripts injected (starting with `config.js`). Which scripts to use is up to you, but for Android a good command to start with is:
     ```bash
     frida -U \
-    -l ./config.js \
-    -l ./native-connect-hook.js \
-    -l ./native-tls-hook.js \
-    -l ./android/android-proxy-override.js \
-    -l ./android/android-system-certificate-injection.js \
-    -l ./android/android-certificate-unpinning.js \
-    -l ./android/android-certificate-unpinning-fallback.js \
-    -l ./android/root_detection_bypass.js \
-    -f $PACKAGE_ID
+        -l ./config.js \
+        -l ./native-connect-hook.js \
+        -l ./native-tls-hook.js \
+        -l ./android/android-proxy-override.js \
+        -l ./android/android-system-certificate-injection.js \
+        -l ./android/android-certificate-unpinning.js \
+        -l ./android/android-certificate-unpinning-fallback.js \
+        -l ./android/disable-root-detection.js \
+        -f $PACKAGE_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
 
@@ -62,6 +63,7 @@ The scripts can automatically handle:
     frida -U \
         -l ./config.js \
         -l ./ios/ios-connect-hook.js \
+        -l ./ios/ios-disable-detection.js \
         -l ./native-tls-hook.js \
         -l ./native-connect-hook.js \
         -f $APP_ID
@@ -128,6 +130,14 @@ Each script includes detailed documentation on what it does and how it works in 
 
         Detects unhandled certificate validation failures, and attempts to handle unknown unrecognized cases with auto-generated fallback patches. This is more experimental and could be slightly unpredictable, but is very helpful for obfuscated cases, and in general will either fix pinning issues (after one initial failure) or will at least highlight code for further reverse engineering in the Frida log output. This script shares some logic with `android-certificate-unpinning.js`, and cannot be used standalone - if you want to use this script, you'll need to include the non-fallback unpinning script too.
 
+    * `android-disable-root-detection.js`
+
+        Disables common root detection checks across native and Java layers to prevent detection of rooted Android devices.
+
+        This script intercepts file system access, shell commands, and package lookups for known root indicators (like `su`, Magisk, and related apps), and fakes key system properties (`ro.secure`, `ro.debuggable`, etc.) to simulate a production environment.
+
+        It blocks suspicious behavior like file existence checks and shell command execution, helping evade detection in apps using both standard and advanced root checks.
+
 * `ios/`
 
     * `ios-connect-hook.js`
@@ -136,19 +146,15 @@ Each script includes detailed documentation on what it does and how it works in 
 
         This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
 
+    * `ios-disable-detection.js`
+
+        Disables JailMonkey jailbreak detection.
+
 * `utilities/test-ip-connectivity.js`
 
     You probably don't want to use this normally as part of interception itself, but it can be very useful as part of your configuration setup.
 
     This script allows you to configure a list of possible IP addresses and a target port, and have the process test each address, and send a message to the Frida client for the first reachable address provided. This can be useful for automated configuration processes, if you don't know which IP address is best to use to reach the proxy server (your computer) from the target device (your phone).
-
-* `android/root_detection_bypass.js`
-
-    Disables common root detection checks across native and Java layers to prevent detection of rooted Android devices.
-
-    This script intercepts file system access, shell commands, and package lookups for known root indicators (like `su`, Magisk, and related apps), and fakes key system properties (`ro.secure`, `ro.debuggable`, etc.) to simulate a production environment.
-
-    It blocks suspicious behavior like file existence checks and shell command execution, helping evade detection in apps using both standard and advanced root checks.
 
 
 These scripts are part of [a broader HTTP Toolkit project](https://httptoolkit.com/blog/frida-mobile-interception-funding/), funded through the [NGI Zero Entrust Fund](https://nlnet.nl/entrust), established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more on the [NLnet project page](https://nlnet.nl/project/F3-AppInterception#ack).
