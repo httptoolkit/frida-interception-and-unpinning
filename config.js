@@ -157,13 +157,14 @@ function waitForModule(moduleName, callback) {
     }
 
     try {
-        Module.ensureInitialized(moduleName);
-        callback(moduleName);
+        const module = Process.getModuleByName(moduleName)
+        module.ensureInitialized();
+        callback(module);
         return;
     } catch (e) {
         try {
-            Module.load(moduleName);
-            callback(moduleName);
+            const module = Module.load(moduleName);
+            callback(module);
             return;
         } catch (e) {}
     }
@@ -188,10 +189,15 @@ new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((
         onLeave() {
             if (!this.moduleName) return;
 
+            const module = Process.findModuleByName(this.moduleName);
+            if (!module) return;
+
             Object.keys(MODULE_LOAD_CALLBACKS).forEach((key) => {
                 if (this.moduleName === key) {
-                    MODULE_LOAD_CALLBACKS[key](this.moduleName);
-                    delete MODULE_LOAD_CALLBACKS[key];
+                    if (module) {
+                        MODULE_LOAD_CALLBACKS[key](module);
+                        delete MODULE_LOAD_CALLBACKS[key];
+                    }
                 }
             });
         }
