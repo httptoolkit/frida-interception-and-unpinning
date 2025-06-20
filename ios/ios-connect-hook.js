@@ -20,12 +20,13 @@
 
 // This is the method we're going to patch:
 // https://developer.apple.com/documentation/network/2976677-nw_connection_create (iOS 12+)
-const nw_connection_create = Module.findExportByName('libnetwork.dylib', 'nw_connection_create');
+const libnetwork = Process.getModuleByName('libnetwork.dylib');
+const nw_connection_create = libnetwork.getExportByName('nw_connection_create');
 
 // This is the method to make a new endpoint to connect to:
 // https://developer.apple.com/documentation/network/2976720-nw_endpoint_create_host (iOS 12+)
 const nw_endpoint_create_host = new NativeFunction(
-    Module.findExportByName('libnetwork.dylib', 'nw_endpoint_create_host'),
+    libnetwork.findExportByName('nw_endpoint_create_host'),
     'pointer', ['pointer', 'pointer']
 );
 

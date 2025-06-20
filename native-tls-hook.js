@@ -40,8 +40,8 @@ const TARGET_LIBS = [
 ];
 
 TARGET_LIBS.forEach((targetLib) => {
-    waitForModule(targetLib.name, (moduleName) => {
-        patchTargetLib(moduleName);
+    waitForModule(targetLib.name, (targetModule) => {
+        patchTargetLib(targetModule, targetLib.name);
         targetLib.hooked = true;
     });
 
@@ -56,36 +56,36 @@ TARGET_LIBS.forEach((targetLib) => {
     }
 });
 
-function patchTargetLib(targetLib) {
+function patchTargetLib(targetModule, targetName) {
     // Get the peer certificates from an SSL pointer. Returns a pointer to a STACK_OF(CRYPTO_BUFFER)
     // which requires use of the next few methods below to actually access.
     // https://commondatastorage.googleapis.com/chromium-boringssl-docs/ssl.h.html#SSL_get0_peer_certificates
     const SSL_get0_peer_certificates = new NativeFunction(
-        Module.findExportByName(targetLib, 'SSL_get0_peer_certificates'),
+        targetModule.getExportByName('SSL_get0_peer_certificates'),
         'pointer', ['pointer']
     );
 
     // Stack methods:
     // https://commondatastorage.googleapis.com/chromium-boringssl-docs/stack.h.html
     const sk_num = new NativeFunction(
-        Module.findExportByName(targetLib, 'sk_num'),
+        targetModule.getExportByName('sk_num'),
         'size_t', ['pointer']
     );
 
     const sk_value = new NativeFunction(
-        Module.findExportByName(targetLib, 'sk_value'),
+        targetModule.getExportByName('sk_value'),
         'pointer', ['pointer', 'int']
     );
 
     // Crypto buffer methods:
     // https://commondatastorage.googleapis.com/chromium-boringssl-docs/pool.h.html
     const crypto_buffer_len = new NativeFunction(
-        Module.findExportByName(targetLib, 'CRYPTO_BUFFER_len'),
+        targetModule.getExportByName('CRYPTO_BUFFER_len'),
         'size_t', ['pointer']
     );
 
     const crypto_buffer_data = new NativeFunction(
-        Module.findExportByName(targetLib, 'CRYPTO_BUFFER_data'),
+        targetModule.getExportByName('CRYPTO_BUFFER_data'),
         'pointer', ['pointer']
     );
 
@@ -118,7 +118,7 @@ function patchTargetLib(targetLib) {
                 }
                 pendingCheckThreads.add(threadId);
 
-                if (targetLib !== 'libboringssl.dylib') {
+                if (targetName !== 'libboringssl.dylib') {
                     // Cronet assumes its callback is always called, and crashes if not. iOS's BoringSSL
                     // meanwhile seems to use some negative checks in its callback, and rejects the
                     // connection independently of the return value here if it's called with a bad cert.
@@ -171,8 +171,8 @@ function patchTargetLib(targetLib) {
     };
 
     const customVerifyAddrs = [
-        Module.findExportByName(targetLib, "SSL_set_custom_verify"),
-        Module.findExportByName(targetLib, "SSL_CTX_set_custom_verify")
+        targetModule.findExportByName("SSL_set_custom_verify"),
+        targetModule.findExportByName("SSL_CTX_set_custom_verify")
     ].filter(Boolean);
 
     customVerifyAddrs.forEach((set_custom_verify_addr) => {
@@ -190,14 +190,14 @@ function patchTargetLib(targetLib) {
 
     if (customVerifyAddrs.length) {
         if (DEBUG_MODE) {
-            console.log(`[+] Patched ${customVerifyAddrs.length} ${targetLib} verification methods`);
+            console.log(`[+] Patched ${customVerifyAddrs.length} ${targetName} verification methods`);
         }
-        console.log(`== Hooked native TLS lib ${targetLib} ==`);
+        console.log(`== Hooked native TLS lib ${targetName} ==`);
     } else {
-        console.log(`\n !!! Hooking native TLS lib ${targetLib} failed - no verification methods found`);
+        console.log(`\n !!! Hooking native TLS lib ${targetName} failed - no verification methods found`);
     }
 
-    const get_psk_identity_addr = Module.findExportByName(targetLib, "SSL_get_psk_identity");
+    const get_psk_identity_addr = targetModule.findExportByName("SSL_get_psk_identity");
     if (get_psk_identity_addr) {
         // Hooking this is apparently required for some verification paths which check the
         // result is not 0x0. Any return value should work fine though.

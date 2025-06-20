@@ -21,11 +21,15 @@ const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 1
 const IPv6_MAPPING_PREFIX_BYTES = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff];
 const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_BYTES);
 
-const connectFn = (
-    Module.findExportByName('libc.so', 'connect') ?? // Android
-    Module.findExportByName('libc.so.6', 'connect') ?? // Linux
-    Module.findExportByName('libsystem_kernel.dylib', 'connect') // iOS
-);
+let connectFn = null;
+try {
+    connectFn =
+        Process.findModuleByName('libc.so')?.findExportByName('connect') ?? // Android
+        Process.findModuleByName('libc.so.6')?.findExportByName('connect') ?? // Linux
+        Process.findModuleByName('libsystem_kernel.dylib')?.findExportByName('connect'); // iOS
+} catch (e) {
+    console.error("Failed to find 'connect' export:", e);
+}
 
 if (!connectFn) { // Should always be set, but just in case
     console.warn('Could not find libc connect() function to hook raw traffic');
