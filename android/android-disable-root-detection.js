@@ -22,6 +22,8 @@
         }
     }
 
+    const LIB_C = Process.findModuleByName("libc.so");
+
     const BUILD_FINGERPRINT_REGEX = /^([\w.-]+\/[\w.-]+\/[\w.-]+):([\w.]+\/[\w.-]+\/[\w.-]+):(\w+\/[\w,.-]+)$/;
 
     const CONFIG = {
@@ -116,7 +118,7 @@
     };
 
     function bypassNativeFileCheck() {
-        const fopen = Module.findExportByName("libc.so", "fopen");
+        const fopen = LIB_C.findExportByName("fopen");
         if (fopen) {
             Interceptor.attach(fopen, {
                 onEnter(args) {
@@ -136,7 +138,7 @@
             });
         }
 
-        const access = Module.findExportByName("libc.so", "access");
+        const access = LIB_C.findExportByName("access");
         if (access) {
             Interceptor.attach(access, {
                 onEnter(args) {
@@ -156,7 +158,7 @@
             });
         }
 
-        const stat = Module.findExportByName("libc.so", "stat");
+        const stat = LIB_C.findExportByName("stat");
         if (stat) {
             Interceptor.attach(stat, {
                 onEnter(args) {
@@ -174,7 +176,7 @@
             });
         }
 
-        const lstat = Module.findExportByName("libc.so", "lstat");
+        const lstat = LIB_C.findExportByName("lstat");
         if (lstat) {
             Interceptor.attach(lstat, {
                 onEnter(args) {
@@ -278,7 +280,7 @@
             fieldObj.set(null, value);
         });
 
-        const system_property_get = Module.findExportByName("libc.so", "__system_property_get");
+        const system_property_get = LIB_C.findExportByName("__system_property_get");
         if (system_property_get) {
             Interceptor.attach(system_property_get, {
                 onEnter(args) {
