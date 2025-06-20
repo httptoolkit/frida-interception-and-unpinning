@@ -233,12 +233,13 @@
 
         const FileInputStream = Java.use("java.io.FileInputStream");
         FileInputStream.$init.overload('java.io.File').implementation = function(file) {
-            const filename = file.getAbsolutePath();
-            if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
+            const path = file.getAbsolutePath();
+            const filename = file.getName();
+            if (ROOT_INDICATORS.paths.has(path) || path.includes("magisk") || filename.includes("su")) {
                 if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: file stream for ${filename}`);
+                    console.debug(`Blocked possible root detection: file stream for ${path}`);
                 } else logFirstRootDetection();
-                throw new Java.use("java.io.FileNotFoundException").$new(filename);
+                throw Java.use("java.io.FileNotFoundException").$new(path);
             }
             return this.$init(file);
         };
