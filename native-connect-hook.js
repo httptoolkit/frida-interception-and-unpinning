@@ -24,9 +24,9 @@ const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_B
 let connectFn = null;
 try {
     connectFn =
-        Process.getModuleByName('libc.so').findExportByName('connect') ?? //Android
-        Process.getModuleByName('libc.so.6').findExportByName('connect') ?? // Linux
-        Process.getModuleByName('libsystem_kernel.dylib').findExportByName('connect'); //IOS
+        Process.findModuleByName('libc.so')?.findExportByName('connect') ?? // Android
+        Process.findModuleByName('libc.so.6')?.findExportByName('connect') ?? // Linux
+        Process.findModuleByName('libsystem_kernel.dylib')?.findExportByName('connect'); // iOS
 } catch (e) {
     console.error("Failed to find 'connect' export:", e);
 }
