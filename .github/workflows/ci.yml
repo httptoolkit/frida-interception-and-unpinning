@@ -8,7 +8,7 @@ jobs:
       image: httptoolkit/act-build-base:v3.0.0
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Build a single-file Android script
         run: |
@@ -22,7 +22,7 @@ jobs:
             ./android/android-certificate-unpinning-fallback.js \
             > ./build/android-frida-interception-script.js
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: android-frida-interception-script.js
           path: ./build/android-frida-interception-script.js
