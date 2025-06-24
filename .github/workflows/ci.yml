@@ -16,10 +16,12 @@ jobs:
 
           paste -sd'\n' ./config.js \
             ./native-connect-hook.js \
+            ./native-tls-hook.js \
             ./android/android-proxy-override.js \
             ./android/android-system-certificate-injection.js \
             ./android/android-certificate-unpinning.js \
             ./android/android-certificate-unpinning-fallback.js \
+            ./android/android-disable-root-detection.js \
             > ./build/android-frida-interception-script.js
 
       - uses: actions/upload-artifact@v4
