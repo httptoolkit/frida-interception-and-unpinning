@@ -196,12 +196,19 @@
     }
 
     function bypassJavaFileCheck() {
+        function isRootIndicatorFile(file) {
+            const path = file.getAbsolutePath();
+            const filename = file.getName();
+            return ROOT_INDICATORS.paths.has(path) ||
+                path.includes("magisk") ||
+                filename === "su";
+        }
+
         const UnixFileSystem = Java.use("java.io.UnixFileSystem");
         UnixFileSystem.checkAccess.implementation = function(file, access) {
-            const filename = file.getAbsolutePath();
-            if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
+            if (isRootIndicatorFile(file)) {
                 if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: filesystem access check for ${filename}`);
+                    console.debug(`Blocked possible root detection: filesystem access check for ${file.getAbsolutePath()}`);
                 } else logFirstRootDetection();
                 return false;
             }
@@ -210,10 +217,9 @@
 
         const File = Java.use("java.io.File");
         File.exists.implementation = function() {
-            const filename = this.getAbsolutePath();
-            if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
+            if (isRootIndicatorFile(this)) {
                 if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: file exists check for ${filename}`);
+                    console.debug(`Blocked possible root detection: file exists check for ${this.getAbsolutePath()}`);
                 } else logFirstRootDetection();
                 return false;
             }
@@ -221,10 +227,9 @@
         };
 
         File.length.implementation = function() {
-            const filename = this.getAbsolutePath();
-            if (ROOT_INDICATORS.paths.has(filename) || filename.includes("magisk") || filename.includes("su")) {
+            if (isRootIndicatorFile(this)) {
                 if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: file length check for ${filename}`);
+                    console.debug(`Blocked possible root detection: file length check for ${this.getAbsolutePath()}`);
                 } else logFirstRootDetection();
                 return 0;
             }
@@ -233,13 +238,11 @@
 
         const FileInputStream = Java.use("java.io.FileInputStream");
         FileInputStream.$init.overload('java.io.File').implementation = function(file) {
-            const path = file.getAbsolutePath();
-            const filename = file.getName();
-            if (ROOT_INDICATORS.paths.has(path) || path.includes("magisk") || filename.includes("su")) {
+            if (isRootIndicatorFile(file)) {
                 if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: file stream for ${path}`);
+                    console.debug(`Blocked possible root detection: file stream for ${file.getAbsolutePath()}`);
                 } else logFirstRootDetection();
-                throw Java.use("java.io.FileNotFoundException").$new(path);
+                throw Java.use("java.io.FileNotFoundException").$new(file.getAbsolutePath());
             }
             return this.$init(file);
         };
