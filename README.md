@@ -13,6 +13,7 @@ The scripts can automatically handle:
 * Patching many (all?) known certificate pinning and certificate transparency tools, to allow interception by your CA certificate even when this is actively blocked.
 * On Android, as a fallback: auto-detection of remaining pinning failures, to attempt auto-patching of obfuscated certificate pinning (in fully obfuscated apps, the first request may fail, but this will trigger additional patching so that all subsequent requests work correctly).
 * Disabling many common root & jailbreak detections.
+* Blocking most HTTP/3 connections (all UDP to port 443), which may be inconvenient to intercept, ensuring apps fall back to HTTP/2 or HTTP/1.
 
 ## Android Getting Started Guide
 
@@ -93,6 +94,7 @@ Each script includes detailed documentation on what it does and how it works in 
     * `PROXY_HOST` - the IP address (IPv4) of the proxy server to use (not required if you're only unpinning)
     * `PROXY_PORT` - the port of the proxy server to use (not required if you're only unpinning)
     * `DEBUG_MODE` - defaults to `false`, but switching this to `true` will enable lots of extra output that can be useful for debugging and reverse engineering any issues.
+    * `BLOCK_HTTP3` - defaults to `true`, which blocks HTTP/3 by dropping all UDP connections to port 443.
 
     This should be listed on the command line before any other scripts.
 
@@ -100,7 +102,7 @@ Each script includes detailed documentation on what it does and how it works in 
 
     Captures all network traffic directly, routing all connections to the configured proxy host & port.
 
-    This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections.
+    This is a low-level hook that applies to _all_ network connections. This ensures that all connections are forcibly redirected to the target proxy server, even those which ignore proxy settings or make other raw socket connections, and also blocks HTTP/3 connections if enabled.
 
     This hook applies to libc, and works for Android, Linux, iOS, and many other related environments.
 

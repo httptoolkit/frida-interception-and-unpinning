@@ -32,6 +32,11 @@ const DEBUG_MODE = false;
 // sent via the proxy and intercepted despite this setting.
 const IGNORED_NON_HTTP_PORTS = [];
 
+// As HTTP/3 is often not well supported by MitM proxies, by default it
+// is blocked entirely, so all outgoing UDP connections to port 443
+// will fail. If this is set to false, they will instead be redirected
+// to the same proxy port & address as TCP connections.
+const BLOCK_HTTP3 = true;
 
 // ----------------------------------------------------------------------------
 // You don't need to modify any of the below, it just checks and applies some
