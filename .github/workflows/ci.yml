@@ -47,3 +47,30 @@ jobs:
           file: ./build/android-frida-interception-script.js
           tag: ${{ github.ref }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+  test-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Set up Android SDK and Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb devices
+            echo "Emulator started."
+      - name: Install Frida CLI
+        run: |
+          pip install --user frida-tools
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Prepare emulator
+        run: bash test/setup-emulator.sh
