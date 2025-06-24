@@ -335,8 +335,8 @@
         ApplicationPackageManager.getInstalledPackages.overload('int').implementation = function(flags) {
             const packages = this.getInstalledPackages(flags);
             const packageList = packages.toArray();
-            const filteredPackages = packageList.filter(pkg => !ROOT_INDICATORS.packages.has(pkg.packageName.value));
-            return Java.use("java.util.ArrayList").$new(filteredPackages);
+            const filteredPackages = packageList.filter(pkg => !ROOT_INDICATORS.packages.has(pkg.packageName?.value));
+            return Java.use("java.util.ArrayList").$new(Java.use("java.util.Arrays").asList(filteredPackages));
         };
     }
 
