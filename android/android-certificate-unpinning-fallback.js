@@ -38,6 +38,8 @@ Java.perform(function () {
     try {
         const X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
         const defaultTrustManager = getCustomX509TrustManager(); // Defined in the unpinning script
+        const certBytes = Java.use("java.lang.String").$new(CERT_PEM).getBytes();
+        const trustedCACert = buildX509CertificateFromBytes(certBytes); // Ditto
 
         const isX509TrustManager = (cls, methodName) =>
             methodName === 'checkServerTrusted' &&
@@ -77,6 +79,12 @@ Java.perform(function () {
             const matchedChain = matchOkHttpChain(chainType, responseTypeName);
             return !!matchedChain;
         };
+
+        const isMetaPinningMethod = (errorMessage, method) =>
+            method.argumentTypes.length === 1 &&
+            method.argumentTypes[0].className === 'java.util.List' &&
+            method.returnType.className === 'void' &&
+            errorMessage.includes('pinning error');
 
         const matchOkHttpChain = (cls, expectedReturnTypeName) => {
             // Find the chain.proceed() method:
@@ -202,6 +210,23 @@ Java.perform(function () {
                                     callingClass.class.getName()
                                 }`);
                             }
+                        } else if (isMetaPinningMethod(errorMessage, failingMethod)) {
+                            failingMethod.implementation = function (certs) {
+                                if (DEBUG_MODE) console.log(` => Fallback patch for meta proxygen pinning`);
+                                for (const cert of certs.toArray()) {
+                                    if (cert.equals(trustedCACert)) {
+                                        return; // Our own cert - all good
+                                    }
+                                }
+
+                                if (DEBUG_MODE) {
+                                    console.warn(' Meta unpinning fallback found only untrusted certificates');
+                                }
+                                // Fall back to normal logic, in case of passthrough or similar
+                                return failingMethod.call(this, certs);
+                            }
+
+                            console.log(`      [+] ${className}->${methodName} (Meta proxygen pinning fallback patch)`);
                         } else {
                             console.error('      [ ] Unrecognized TLS error - this must be patched manually');
                             return;
