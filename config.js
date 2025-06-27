@@ -38,6 +38,13 @@ const IGNORED_NON_HTTP_PORTS = [];
 // to the same proxy port & address as TCP connections.
 const BLOCK_HTTP3 = true;
 
+// Set this to true if your proxy supports SOCKS5 connections.
+// This makes it possible for native-connect-hook to redirect
+// non-HTTP traffic through your proxy (to view it raw, and
+// avoid breaking non-HTTP traffic en route).
+const PROXY_SUPPORTS_SOCKS5 = false;
+
+
 // ----------------------------------------------------------------------------
 // You don't need to modify any of the below, it just checks and applies some
 // of the configuration that you've entered above.

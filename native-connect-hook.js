@@ -17,24 +17,36 @@
  * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
  */
 
-const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 10));
-const IPv6_MAPPING_PREFIX_BYTES = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff];
-const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_BYTES);
+(() => {
+    const PROXY_HOST_IPv4_BYTES = PROXY_HOST.split('.').map(part => parseInt(part, 10));
+    const IPv6_MAPPING_PREFIX_BYTES = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff];
+    const PROXY_HOST_IPv6_BYTES = IPv6_MAPPING_PREFIX_BYTES.concat(PROXY_HOST_IPv4_BYTES);
 
-let connectFn = null;
-try {
-    connectFn =
-        Process.findModuleByName('libc.so')?.findExportByName('connect') ?? // Android
-        Process.findModuleByName('libc.so.6')?.findExportByName('connect') ?? // Linux
-        Process.findModuleByName('libsystem_kernel.dylib')?.findExportByName('connect'); // iOS
-} catch (e) {
-    console.error("Failed to find 'connect' export:", e);
-}
+    // Flags for fcntl():
+    const F_GETFL = 3;
+    const F_SETFL = 4;
+    const O_NONBLOCK = (Process.platform === 'darwin')
+        ? 4
+        : 2048; // Linux/Android
 
-if (!connectFn) { // Should always be set, but just in case
-    console.warn('Could not find libc connect() function to hook raw traffic');
-} else {
-    Interceptor.attach(connectFn, {
+    let fcntl, send, recv;
+    try {
+        const systemModule = Process.findModuleByName('libc.so') ?? // Android
+                             Process.findModuleByName('libc.so.6') ?? // Linux
+                             Process.findModuleByName('libsystem_kernel.dylib'); // iOS
+
+        if (!systemModule) throw new Error("Could not find libc or libsystem_kernel");
+
+        fcntl = new NativeFunction(systemModule.getExportByName('fcntl'), 'int', ['int', 'int', 'int']);
+        send = new NativeFunction(systemModule.getExportByName('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        recv = new NativeFunction(systemModule.getExportByName('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+    } catch (e) {
+        console.error("Failed to set up native hooks:", e.message);
+        console.warn('Could not initialize system functions to to hook raw traffic');
+        return;
+    }
+
+    Interceptor.attach(systemModule.getExportByName('connect'), {
         onEnter(args) {
             const fd = this.sockFd = args[0].toInt32();
             const sockType = Socket.type(fd);
@@ -81,6 +93,18 @@ if (!connectFn) { // Should always be set, but just in case
                     this.state = 'Blocked';
                 } else if (!shouldBeIgnored) {
                     // Otherwise, it's an unintercepted connection that should be captured:
+                    this.state = 'intercepting';
+
+                    // For SOCKS, we preserve the original destionation to use in the SOCKS handshake later
+                    // and we temporarily set the socket to blocking mode to do the handshake itself.
+                    if (PROXY_SUPPORTS_SOCKS5) {
+                        this.originalDestination = { host: hostBytes, port, isIPv6 };
+                        this.originalFlags = fcntl(this.sockFd, F_GETFL, 0);
+                        this.isNonBlocking = (this.originalFlags & O_NONBLOCK) !== 0;
+                        if (this.isNonBlocking) {
+                            fcntl(this.sockFd, F_SETFL, this.originalFlags & ~O_NONBLOCK);
+                        }
+                    }
 
                     console.log(`Manually intercepting connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
 
@@ -96,7 +120,6 @@ if (!connectFn) { // Should always be set, but just in case
                         // Skip 4 bytes: 2 family, 2 port
                         addrPtr.add(4).writeByteArray(PROXY_HOST_IPv4_BYTES);
                     }
-                    this.state = 'Intercepted';
                 } else {
                     // Explicitly being left alone
                     if (DEBUG_MODE) {
@@ -111,15 +134,43 @@ if (!connectFn) { // Should always be set, but just in case
 
             // N.b. we ignore all non-TCP connections: both UDP and Unix streams
         },
-        onLeave: function (result) {
+        onLeave: function (retval) {
             if (!DEBUG_MODE || this.state === 'ignored') return;
 
-            const fd = this.sockFd;
-            const sockType = Socket.type(fd);
-            const address = Socket.peerAddress(fd);
-            console.debug(
-                `${this.state} ${sockType} fd ${fd} to ${JSON.stringify(address)} (${result.toInt32()})`
-            );
+            if (this.state === 'intercepting') {
+                const connectSuccess = retval.toInt32() === 0;
+
+                if (PROXY_SUPPORTS_SOCKS5) {
+                    let handshakeSuccess = false;
+
+                    const { host, port, isIPv6 } = this.originalDestination;
+                    if (connectSuccess) {
+                        handshakeSuccess = performSocksHandshake(this.sockFd, host, port, isIPv6);
+                    } else {
+                        console.error(`SOCKS: Failed to connect to proxy at ${PROXY_HOST}:${PROXY_PORT}`);
+                    }
+
+                    if (this.isNonBlocking) {
+                        fcntl(this.sockFd, F_SETFL, this.originalFlags);
+                    }
+
+                    if (handshakeSuccess) {
+                        const readableHost = getReadableAddress(host, isIPv6);
+                        if (DEBUG_MODE) console.debug(`SOCKS redirect successful for fd ${this.sockFd} to ${readableHost}:${port}`);
+                        retval.replace(0);
+                    } else {
+                        if (DEBUG_MODE) console.error(`SOCKS redirect FAILED for fd ${this.sockFd}`);
+                        retval.replace(-1);
+                    }
+                }
+            } else {
+                const fd = this.sockFd;
+                const sockType = Socket.type(fd);
+                const address = Socket.peerAddress(fd);
+                console.debug(
+                    `${this.state} ${sockType} fd ${fd} to ${JSON.stringify(address)} (${retval.toInt32()})`
+                );
+            }
         }
     });
 
@@ -128,33 +179,87 @@ if (!connectFn) { // Should always be set, but just in case
         ? 'all'
         : 'all unrecognized'
     } TCP connections to ${PROXY_HOST}:${PROXY_PORT} ==`);
-}
 
-const getReadableAddress = (
-    /** @type {Uint8Array} */ hostBytes,
-    /** @type {boolean} */ isIPv6
-) => {
-    if (!isIPv6) {
-        // Return simple a.b.c.d IPv4 format:
-        return [...hostBytes].map(x => x.toString()).join('.');
+    const getReadableAddress = (
+        /** @type {Uint8Array} */ hostBytes,
+        /** @type {boolean} */ isIPv6
+    ) => {
+        if (!isIPv6) {
+            // Return simple a.b.c.d IPv4 format:
+            return [...hostBytes].map(x => x.toString()).join('.');
+        }
+
+        if (
+            hostBytes.slice(0, 10).every(b => b === 0) &&
+            hostBytes.slice(10, 12).every(b => b === 255)
+        ) {
+            // IPv4-mapped IPv6 address - print as IPv4 for readability
+            return '::ffff:'+[...hostBytes.slice(12)].map(x => x.toString()).join('.');
+        }
+
+        else {
+            // Real IPv6:
+            return `[${[...hostBytes].map(x => x.toString(16)).join(':')}]`;
+        }
+    };
+
+    const areArraysEqual = (arrayA, arrayB) => {
+        if (arrayA.length !== arrayB.length) return false;
+        return arrayA.every((x, i) => arrayB[i] === x);
+    };
+
+    function performSocksHandshake(sockfd, targetHostBytes, targetPort, isIPv6) {
+        const hello = Memory.alloc(3).writeByteArray([0x05, 0x01, 0x00]);
+        if (send(sockfd, hello, 3, 0) < 0) {
+            console.error("SOCKS: Failed to send hello");
+            return false;
+        }
+
+        const response = Memory.alloc(2);
+        if (recv(sockfd, response, 2, 0) < 0) {
+            console.error("SOCKS: Failed to receive server choice");
+            return false;
+        }
+
+        if (response.readU8() !== 0x05 || response.add(1).readU8() !== 0x00) {
+            console.error("SOCKS: Server rejected auth method");
+            return false;
+        }
+
+        let req = [0x05, 0x01, 0x00]; // VER, CMD(CONNECT), RSV
+
+        if (isIPv6) {
+            req.push(0x04); // ATYP: IPv6
+        } else { // IPv4
+            req.push(0x01); // ATYP: IPv4
+        }
+
+        req.push(...targetHostBytes, (targetPort >> 8) & 0xff, targetPort & 0xff);
+        const reqBuf = Memory.alloc(req.length).writeByteArray(req);
+
+        if (send(sockfd, reqBuf, req.length, 0) < 0) {
+            console.error("SOCKS: Failed to send connection request");
+            return false;
+        }
+
+        const replyHeader = Memory.alloc(4);
+        if (recv(sockfd, replyHeader, 4, 0) < 0) {
+            console.error("SOCKS: Failed to receive reply header");
+            return false;
+        }
+
+        const replyCode = replyHeader.add(1).readU8();
+        if (replyCode !== 0x00) {
+            console.error(`SOCKS: Server returned error code ${replyCode}`);
+            return false;
+        }
+
+        const atyp = replyHeader.add(3).readU8();
+        let remainingBytes = 0;
+        if (atyp === 0x01) remainingBytes = 4 + 2; // IPv4 + port
+        else if (atyp === 0x04) remainingBytes = 16 + 2; // IPv6 + port
+        if (remainingBytes > 0) recv(sockfd, Memory.alloc(remainingBytes), remainingBytes, 0);
+
+        return true;
     }
-
-    if (
-        hostBytes.slice(0, 10).every(b => b === 0) &&
-        hostBytes.slice(10, 12).every(b => b === 255)
-    ) {
-        // IPv4-mapped IPv6 address - print as IPv4 for readability
-        return '::ffff:'+[...hostBytes.slice(12)].map(x => x.toString()).join('.');
-    }
-
-    else {
-        // Real IPv6:
-        return `[${[...hostBytes].map(x => x.toString(16)).join(':')}]`;
-    }
-};
-
-const areArraysEqual = (arrayA, arrayB) => {
-    if (arrayA.length !== arrayB.length) return false;
-    return arrayA.every((x, i) => arrayB[i] === x);
-};
-
+})();
