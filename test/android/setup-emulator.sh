@@ -10,8 +10,9 @@ adb shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done;'
 echo "Emulator/device booted."
 
 # Download and install APK if not already installed
+APK_VERSION="v1.5.0"
 APK_PATH="/tmp/pinning-demo.apk"
-APK_URL="https://github.com/httptoolkit/android-ssl-pinning-demo/releases/download/v1.4.1/pinning-demo.apk"
+APK_URL="https://github.com/httptoolkit/android-ssl-pinning-demo/releases/download/${APK_VERSION}/pinning-demo.apk"
 PACKAGE="tech.httptoolkit.pinning_demo"
 if ! adb shell pm list packages | grep -q "$PACKAGE"; then
   wget -q $APK_URL -O $APK_PATH

@@ -62,6 +62,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'test/android/package-lock.json'
+
       - name: Install Frida CLI
         run: |
           pip install --user frida-tools
@@ -104,6 +111,7 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb devices
-            bash test/android/setup-emulator.sh
+            ./test/android/setup-emulator.sh
             echo "Emulator ready to test"
-            adb shell pgrep -f frida-server
+            cd test/android && npm install && npm test
+            echo "Tests completed."
