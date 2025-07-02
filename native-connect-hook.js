@@ -29,9 +29,9 @@
         ? 4
         : 2048; // Linux/Android
 
-    let fcntl, send, recv;
+    let systemModule, fcntl, send, recv;
     try {
-        const systemModule = Process.findModuleByName('libc.so') ?? // Android
+        systemModule = Process.findModuleByName('libc.so') ?? // Android
                              Process.findModuleByName('libc.so.6') ?? // Linux
                              Process.findModuleByName('libsystem_kernel.dylib'); // iOS
 
