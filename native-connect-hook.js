@@ -29,9 +29,9 @@
         ? 4
         : 2048; // Linux/Android
 
-    let systemModule, fcntl, send, recv;
+    let fcntl, send, recv, conn;
     try {
-        systemModule = Process.findModuleByName('libc.so') ?? // Android
+        const systemModule = Process.findModuleByName('libc.so') ?? // Android
                              Process.findModuleByName('libc.so.6') ?? // Linux
                              Process.findModuleByName('libsystem_kernel.dylib'); // iOS
 
@@ -40,13 +40,15 @@
         fcntl = new NativeFunction(systemModule.getExportByName('fcntl'), 'int', ['int', 'int', 'int']);
         send = new NativeFunction(systemModule.getExportByName('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
         recv = new NativeFunction(systemModule.getExportByName('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+
+        conn = systemModule.getExportByName('connect')
     } catch (e) {
         console.error("Failed to set up native hooks:", e.message);
         console.warn('Could not initialize system functions to to hook raw traffic');
         return;
     }
 
-    Interceptor.attach(systemModule.getExportByName('connect'), {
+    Interceptor.attach(conn, {
         onEnter(args) {
             const fd = this.sockFd = args[0].toInt32();
             const sockType = Socket.type(fd);
