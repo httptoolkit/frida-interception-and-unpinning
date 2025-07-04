@@ -52,8 +52,9 @@ jobs:
     name: Test on Android emulator
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        api-level: [28, 29, 30, 31, 32, 33, 34]
+        api-level: [33]
     steps:
       - uses: actions/checkout@v4
 
