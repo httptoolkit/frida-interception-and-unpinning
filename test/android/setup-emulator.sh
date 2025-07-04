@@ -24,7 +24,7 @@ fi
 
 # Set up Frida server
 FRIDA_VERSION=$(frida --version)
-FRIDA_SERVER_URL="https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-server-${FRIDA_VERSION}-android-x86.xz"
+FRIDA_SERVER_URL="https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-server-${FRIDA_VERSION}-android-x86_64.xz"
 FRIDA_SERVER_LOCAL="/tmp/frida-server"
 FRIDA_SERVER_REMOTE="/data/local/tmp/frida-server"
 

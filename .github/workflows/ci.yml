@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        api-level: [30]
+        api-level: [30, 34]
     steps:
       - uses: actions/checkout@v4
 
@@ -97,6 +97,8 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
+          profile: pixel_c
+          arch: x86_64
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
@@ -107,6 +109,8 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
+          profile: pixel_c
+          arch: x86_64
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
