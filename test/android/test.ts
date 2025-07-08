@@ -38,7 +38,6 @@ describe('Test Android unpinning', function () {
         });
 
         proxyServer = mockttp.getLocal({
-            debug: true,
             recordTraffic: false,
             https: {
                 cert,
@@ -81,9 +80,15 @@ describe('Test Android unpinning', function () {
     beforeEach(async () => {
         proxyServer.reset();
 
-        let reqCount = 0;
+        await proxyServer.on('request', (req) => {
+            console.log(` - Intercepted request to ${req.url}`);
+        });
+
+        await proxyServer.on('tls-client-error', (event) => {
+            console.log(` - TLS interception rejected for ${event.tlsMetadata.sniHostname}`);
+        });
+
         await proxyServer.forAnyRequest().thenCallback((req) => {
-            console.log(`Intercepted request ${reqCount++}: ${req.method} ${req.url}`);
             return { statusCode: 200, body: 'Mocked response' };
         });
     });
