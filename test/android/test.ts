@@ -9,11 +9,25 @@ const IGNORED_BUTTONS = [
     'RAW CUSTOM-PINNED REQUEST',
 ];
 
-const waitForContentDescription = async (button: WebdriverIO.Element): Promise<string> =>
+const waitForContentDescription = async (button: WebdriverIO.Element, options: { timeout?: number } = {}): Promise<string> =>
     button.waitUntil(
         () => button.getAttribute('content-desc'),
-        { timeout: 30_000 } // Some buttons (AppMattus webview) can take a while
+        { timeout: options.timeout ?? 20_000 }
     );
+
+const clickButton = async (button: WebdriverIO.Element) => {
+    const text = await button.getText();
+    button.click();
+
+    // The webview buttons seem flaky in testing - sometimes they just don't respond (some kind of webview initialization
+    // race?) so if they do nothing, we click them again before the main timeout (20s) expires.
+    if (text.includes('WEBVIEW')) {
+        waitForContentDescription(button, { timeout: 10_000 })
+            .catch((e) => {
+                button.click().catch(() => {});
+            });
+    }
+}
 
 describe('Test Android unpinning', function () {
 
@@ -173,7 +187,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(button => button.click());
+            buttons.map(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
@@ -197,7 +211,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(button => button.click());
+            buttons.map(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
@@ -227,7 +241,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(button => button.click());
+            buttons.map(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (buttonText.toUpperCase().startsWith('UNPINNED')) {
@@ -263,7 +277,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(button => button.click());
+            buttons.map(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
