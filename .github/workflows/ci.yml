@@ -100,6 +100,9 @@ jobs:
           target: google_apis
           profile: pixel_c
           arch: x86_64
+          ram-size: 2048M
+          heap-size: 512M
+          disk-size: 4096M
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
@@ -112,6 +115,9 @@ jobs:
           target: google_apis
           profile: pixel_c
           arch: x86_64
+          ram-size: 2048M
+          heap-size: 512M
+          disk-size: 4096M
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
