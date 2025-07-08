@@ -28,7 +28,7 @@ FRIDA_SERVER_URL="https://github.com/frida/frida/releases/download/${FRIDA_VERSI
 FRIDA_SERVER_LOCAL="/tmp/frida-server"
 FRIDA_SERVER_REMOTE="/data/local/tmp/frida-server"
 
-if ! adb shell pgrep -f frida-server > /dev/null; then
+if ! adb shell "ps -A | grep '[f]rida-server'" > /dev/null; then
   if [ ! -f $FRIDA_SERVER_LOCAL ]; then
     wget -q $FRIDA_SERVER_URL -O /tmp/frida-server.xz
     unxz -f /tmp/frida-server.xz
