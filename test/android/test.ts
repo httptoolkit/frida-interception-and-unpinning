@@ -154,7 +154,9 @@ describe('Test Android unpinning', function () {
 
         // Wait until the app UI is actually loaded & visible on screen:
         console.log("Waiting for app to load...");
-        console.log("App loaded:", await driver.$('android=new UiSelector().text("SSL Pinning Demo")').getText());
+        const titleText = driver.$('android=new UiSelector().text("SSL Pinning Demo")')
+        await titleText.waitForExist()
+        console.log("App loaded:", await titleText.getText());
     }
 
     const testButton = async (button: WebdriverIO.Element, expected: 'Success' | 'Failed' | '?') => {
