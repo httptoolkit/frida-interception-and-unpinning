@@ -84,15 +84,15 @@ describe('Test Android unpinning', function () {
         proxyServer.reset();
 
         let reqCount = 0;
-        proxyServer.forAnyRequest().thenCallback((req) => {
+        await proxyServer.forAnyRequest().thenCallback((req) => {
             console.log(`Intercepted request ${reqCount++}: ${req.method} ${req.url}`);
             return { statusCode: 200, body: 'Mocked response' };
         });
 
         seenRequests = [];
         tlsFailures = [];
-        proxyServer.on('request', (req) => seenRequests.push(req));
-        proxyServer.on('tls-client-error', (event) => tlsFailures.push(event));
+        await proxyServer.on('request', (req) => seenRequests.push(req));
+        await proxyServer.on('tls-client-error', (event) => tlsFailures.push(event));
     });
 
     async function launchFrida(scripts: string[]) {
@@ -137,10 +137,11 @@ describe('Test Android unpinning', function () {
 
     afterEach(async function (this: Mocha.Context) {
         if (this.currentTest?.state === 'failed') {
-            console.log('Test failed');
             if (driver) {
                 const source = await driver.getPageSource().catch((e) => e.message);
-                console.log('Current page source:', source);
+                console.log('Test failed in this state:', source);
+            } else {
+                console.log('Test failed but no driver available to log state');
             }
         }
     });
