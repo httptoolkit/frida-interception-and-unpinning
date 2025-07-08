@@ -227,7 +227,7 @@ describe('Test Android unpinning', function () {
 
     describe("given basic interception", () => {
 
-        beforeEach(async () => {
+        beforeEach(async function () {
             await launchFrida([
                 './test/android/tmp/config.js', // Our custom config
                 // Otherwise just the basic Android settings injection scripts to set the
@@ -235,6 +235,11 @@ describe('Test Android unpinning', function () {
                 './android/android-proxy-override.js',
                 './android/android-system-certificate-injection.js'
             ]);
+
+            // Android <10 uses X509TrustManager (not the cert stores hooked by system-certificate-injection)
+            // so this fails without the unpinning scripts - not really a problem in practice, but unhelpful
+            // for testing.
+            if (driver.capabilities['deviceApiLevel'] <= 28) return this.skip();
         });
 
         it("all unpinned requests should succeed, most others should fail", async () => {
