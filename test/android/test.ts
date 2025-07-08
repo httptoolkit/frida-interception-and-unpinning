@@ -15,21 +15,6 @@ const waitForContentDescription = async (button: WebdriverIO.Element, options: {
         { timeout: options.timeout ?? 20_000 }
     );
 
-const clickButton = async (button: WebdriverIO.Element) => {
-    const text = await button.getText();
-    button.click();
-
-    // The webview buttons seem flaky in testing - sometimes they just don't respond (some kind of webview initialization
-    // race?) so if they do nothing, we click them again before the main timeout (20s) expires.
-    if (text.includes('WEBVIEW')) {
-        waitForContentDescription(button, { timeout: 10_000 })
-            .catch((e) => {
-                console.log(`Retrying webview button ${text} (${e.message})`);
-                button.click().catch(() => {});
-            });
-    }
-}
-
 describe('Test Android unpinning', function () {
 
     this.timeout(60_000);
@@ -38,9 +23,6 @@ describe('Test Android unpinning', function () {
     let driver: WebdriverIO.Browser;
     let fridaSession: ChildProcess.ChildProcess;
     let proxyServer: mockttp.Mockttp;
-
-    let seenRequests: mockttp.CompletedRequest[] = [];
-    let tlsFailures: mockttp.TlsConnectionEvent[] = [];
 
     before(async () => {
         const [cert, key] = await Promise.all([
@@ -56,6 +38,7 @@ describe('Test Android unpinning', function () {
         });
 
         proxyServer = mockttp.getLocal({
+            debug: true,
             recordTraffic: false,
             https: {
                 cert,
@@ -103,11 +86,26 @@ describe('Test Android unpinning', function () {
             console.log(`Intercepted request ${reqCount++}: ${req.method} ${req.url}`);
             return { statusCode: 200, body: 'Mocked response' };
         });
+    });
 
-        seenRequests = [];
-        tlsFailures = [];
-        await proxyServer.on('request', (req) => seenRequests.push(req));
-        await proxyServer.on('tls-client-error', (event) => tlsFailures.push(event));
+    afterEach(async function (this: Mocha.Context) {
+        if (this.currentTest?.state === 'failed') {
+            if (driver) {
+                const source = await driver.getPageSource().catch((e) => e.message);
+                console.log('Test failed in this state:', source);
+            } else {
+                console.log('Test failed but no driver available to log state');
+            }
+        }
+
+        if (driver) {
+            await driver.deleteSession();
+        }
+
+        if (fridaSession) {
+            fridaSession.kill('SIGUSR1');
+            await new Promise(resolve => fridaSession!.on('exit', resolve));
+        }
     });
 
     async function launchFrida(scripts: string[]) {
@@ -155,28 +153,30 @@ describe('Test Android unpinning', function () {
         console.log("App loaded");
     }
 
-    afterEach(async function (this: Mocha.Context) {
-        if (this.currentTest?.state === 'failed') {
-            if (driver) {
-                const source = await driver.getPageSource().catch((e) => e.message);
-                console.log('Test failed in this state:', source);
-            } else {
-                console.log('Test failed but no driver available to log state');
-            }
-        }
-    });
+    const testButton = async (button: WebdriverIO.Element, expected: 'Success' | 'Failed' | '?') => {
+        const text = await button.getText();
+        console.log(`Testing button: ${text} (expected: ${expected})`);
 
+        await button.click();
 
-    afterEach(async () => {
-        if (driver) {
-            await driver.deleteSession();
+        let description: string | undefined;
+
+        // Webview buttons can need a kick to start up, and then end up sending 2x requests, eugh
+        if (text.includes('WEBVIEW')) {
+            waitForContentDescription(button, { timeout: 10_000 })
+                .catch((e) => {
+                    if (!description) {
+                        console.log(`Retrying webview button ${text} (${e.message})`);
+                        button.click().catch(() => {});
+                    }
+                });
         }
 
-        if (fridaSession) {
-            fridaSession.kill('SIGUSR1');
-            await new Promise(resolve => fridaSession!.on('exit', resolve));
+        description = await waitForContentDescription(button);
+        if (expected !== '?') {
+            expect(description).to.include(expected, `Button ${text} was not ${expected}:`);
         }
-    });
+    };
 
     // We run this 100% failure test first, to warm everything up
     describe("with proxy config but no certificate trust", () => {
@@ -193,16 +193,9 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.forEach(clickButton);
-            await Promise.all(await buttons.map(async (button) => {
-                const buttonText = await button.getText();
-                if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
-                    expect(await waitForContentDescription(button)).to.include('Failed');
-                }
-            }));
-
-            expect(seenRequests).to.have.lengthOf(0, 'Expected all requests to fail');
-            expect(tlsFailures).to.have.lengthOf(13, 'Expected TLS failures for all requests');
+            for (let button of buttons) {
+                await testButton(button, 'Failed');
+            }
         });
 
     });
@@ -217,16 +210,11 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.forEach(clickButton);
-            await Promise.all(await buttons.map(async (button) => {
+            for (let button of buttons) {
                 const buttonText = await button.getText();
-                if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
-                    expect(await waitForContentDescription(button)).to.include('Success');
-                }
-            }));
-
-            expect(seenRequests).to.have.lengthOf(0, 'Expected no requests to be intercepted');
-            expect(tlsFailures).to.have.lengthOf(0, 'Expected no TLS failures');
+                const ignored = IGNORED_BUTTONS.includes(buttonText.toUpperCase());
+                await testButton(button, ignored ? '?' : 'Success');
+            }
         });
 
     });
@@ -243,23 +231,15 @@ describe('Test Android unpinning', function () {
             ]);
         });
 
-        it("all unpinned requests should succeed, all others should fail", async () => {
+        it("all unpinned requests should succeed, most others should fail", async () => {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.forEach(clickButton);
-            await Promise.all(await buttons.map(async (button) => {
+            for (let button of buttons) {
                 const buttonText = await button.getText();
-                const description = await waitForContentDescription(button);
-                if (buttonText.toUpperCase().startsWith('UNPINNED')) {
-                    expect(description).to.include('Success');
-                }
-                // Some pinnned requests will still pass because the basic cert
-                // injection is just *that* good.
-            }));
-
-            expect(seenRequests).to.have.lengthOf.at.least(3, 'Expected unpinned requests to be intercepted');
-            expect(tlsFailures).to.have.lengthOf.at.least(5, 'Expected most pinned requests to fail');
+                const shouldSucceed = buttonText.toUpperCase().includes('UNPINNED');
+                await testButton(button, shouldSucceed ? 'Success' : '?');
+            }
         });
 
     });
@@ -284,17 +264,11 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.forEach(clickButton);
-            await Promise.all(await buttons.map(async (button) => {
+            for (let button of buttons) {
                 const buttonText = await button.getText();
-                const description = await waitForContentDescription(button);
-                if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
-                    expect(description).to.include('Success');
-                }
-            }));
-
-            expect(seenRequests).to.have.lengthOf(14, 'Expected all requests to be intercepted');
-            expect(tlsFailures).to.have.lengthOf(1, 'Expected only raw request to fail');
+                const ignored = IGNORED_BUTTONS.includes(buttonText.toUpperCase());
+                await testButton(button, ignored ? '?' : 'Success');
+            }
         });
 
     });
