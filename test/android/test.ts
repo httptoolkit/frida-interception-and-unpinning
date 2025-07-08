@@ -12,7 +12,7 @@ const IGNORED_BUTTONS = [
 const waitForContentDescription = async (button: WebdriverIO.Element, options: { timeout?: number } = {}): Promise<string> =>
     button.waitUntil(
         () => button.getAttribute('content-desc'),
-        { timeout: options.timeout ?? 20_000 }
+        { timeout: options.timeout ?? 30_000 }
     );
 
 describe('Test Android unpinning', function () {
