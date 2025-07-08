@@ -54,7 +54,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [28, 29, 30, 31, 32, 33, 34]
+        # We skip 27 - no x86_64 + google_apis seems to be available for that level?
+        api-level: [22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34]
     steps:
       - uses: actions/checkout@v4
 
