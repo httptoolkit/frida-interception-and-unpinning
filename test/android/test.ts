@@ -24,6 +24,7 @@ const clickButton = async (button: WebdriverIO.Element) => {
     if (text.includes('WEBVIEW')) {
         waitForContentDescription(button, { timeout: 10_000 })
             .catch((e) => {
+                console.log(`Retrying webview button ${text} (${e.message})`);
                 button.click().catch(() => {});
             });
     }
@@ -147,6 +148,11 @@ describe('Test Android unpinning', function () {
                 'appium:fullReset': false,
             }
         });
+
+        // Wait until the app UI is actually loaded & visible on screen:
+        console.log("Waiting for app to load...");
+        await driver.$('android=new UiSelector().text("SSL Pinning Demo")');
+        console.log("App loaded");
     }
 
     afterEach(async function (this: Mocha.Context) {
@@ -173,7 +179,7 @@ describe('Test Android unpinning', function () {
     });
 
     // We run this 100% failure test first, to warm everything up
-    describe("without proxy config but no certificate trust", () => {
+    describe("with proxy config but no certificate trust", () => {
 
         beforeEach(async () => {
             await launchFrida([
@@ -187,7 +193,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(clickButton);
+            buttons.forEach(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
@@ -211,7 +217,7 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(clickButton);
+            buttons.forEach(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
@@ -241,11 +247,12 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(clickButton);
+            buttons.forEach(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
+                const description = await waitForContentDescription(button);
                 if (buttonText.toUpperCase().startsWith('UNPINNED')) {
-                    expect(await waitForContentDescription(button)).to.include('Success');
+                    expect(description).to.include('Success');
                 }
                 // Some pinnned requests will still pass because the basic cert
                 // injection is just *that* good.
@@ -277,11 +284,12 @@ describe('Test Android unpinning', function () {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
             expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
 
-            buttons.map(clickButton);
+            buttons.forEach(clickButton);
             await Promise.all(await buttons.map(async (button) => {
                 const buttonText = await button.getText();
+                const description = await waitForContentDescription(button);
                 if (!IGNORED_BUTTONS.includes(buttonText.toUpperCase())) {
-                    expect(await waitForContentDescription(button)).to.include('Success');
+                    expect(description).to.include('Success');
                 }
             }));
 
