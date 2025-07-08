@@ -9,10 +9,10 @@ const IGNORED_BUTTONS = [
     'RAW CUSTOM-PINNED REQUEST',
 ];
 
-const waitForContentDescription = async (button: WebdriverIO.Element, options: { timeout?: number } = {}): Promise<string> =>
+const waitForContentDescription = async (button: WebdriverIO.Element, options: { timeout: number }): Promise<string> =>
     button.waitUntil(
         () => button.getAttribute('content-desc'),
-        { timeout: options.timeout ?? 30_000 }
+        { timeout: options.timeout }
     );
 
 describe('Test Android unpinning', function () {
@@ -163,22 +163,28 @@ describe('Test Android unpinning', function () {
         const text = await button.getText();
         console.log(`Testing button: ${text} (expected: ${expected})`);
 
-        await button.click();
+        let description: string | undefined = undefined;
 
-        let description: string | undefined;
-
-        // Webview buttons can need a kick to start up, and then end up sending 2x requests, eugh
-        if (text.includes('WEBVIEW')) {
-            waitForContentDescription(button, { timeout: 10_000 })
-                .catch((e) => {
-                    if (!description) {
+        if (!text.includes('WEBVIEW')) {
+            await button.click();
+            description = await waitForContentDescription(button, { timeout: 30_000 });
+        } else {
+            // Webview buttons can need a kick to start up properly:
+            const startTime = Date.now();
+            while (!description) {
+                await button.click();
+                description = await waitForContentDescription(button, { timeout: 5_000 })
+                    .catch((e): undefined => {
                         console.log(`Retrying webview button ${text} (${e.message})`);
-                        button.click().catch(() => {});
-                    }
-                });
+                    });
+
+                if (!description && Date.now() - startTime > 30_000) {
+                    // Give up eventually:
+                    throw new Error(`Webview button ${text} did not respond within 30 seconds`);
+                }
+            }
         }
 
-        description = await waitForContentDescription(button);
         if (expected !== '?') {
             expect(description).to.include(expected, `Button ${text} was not ${expected}:`);
         }
