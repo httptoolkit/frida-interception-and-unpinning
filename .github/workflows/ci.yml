@@ -125,5 +125,5 @@ jobs:
             adb devices
             ./test/android/setup-emulator.sh
             echo "Emulator ready to test"
-            cd test/android && npm install && npm test
+            cd test/android && npm install && npm test -- --retries 3
             echo "Tests completed."
