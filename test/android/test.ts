@@ -135,6 +135,17 @@ describe('Test Android unpinning', function () {
         });
     }
 
+    afterEach(async function (this: Mocha.Context) {
+        if (this.currentTest?.state === 'failed') {
+            console.log('Test failed');
+            if (driver) {
+                const source = await driver.getPageSource().catch((e) => e.message);
+                console.log('Current page source:', source);
+            }
+        }
+    });
+
+
     afterEach(async () => {
         if (driver) {
             await driver.deleteSession();
