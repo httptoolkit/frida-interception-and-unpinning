@@ -41,6 +41,7 @@ The scripts can automatically handle:
         -l ./android/android-certificate-unpinning.js \
         -l ./android/android-certificate-unpinning-fallback.js \
         -l ./android/android-disable-root-detection.js \
+        -l ./android/android-disable-flutter-certificate-pinning.js \
         -f $PACKAGE_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
@@ -139,6 +140,10 @@ Each script includes detailed documentation on what it does and how it works in 
         This script intercepts file system access, shell commands, and package lookups for known root indicators (like `su`, Magisk, and related apps), and fakes key system properties (`ro.secure`, `ro.debuggable`, etc.) to simulate a production environment.
 
         It blocks suspicious behavior like file existence checks and shell command execution, helping evade detection in apps using both standard and advanced root checks.
+
+    * `android-disable-flutter-certificate-pinning.js`
+
+        Ensures that Flutter-based applications (which generally ignore the system certificate configuration) trust your CA certificate, even in most cases of explicit certificate pinning.
 
 * `ios/`
 

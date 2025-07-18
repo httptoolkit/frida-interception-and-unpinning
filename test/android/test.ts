@@ -274,6 +274,7 @@ describe('Test Android unpinning', function () {
                 './android/android-certificate-unpinning.js',
                 './android/android-certificate-unpinning-fallback.js',
                 './android/android-disable-root-detection.js',
+                './android/android-disable-flutter-certificate-pinning.js',
             ]);
         });
 
