@@ -163,6 +163,10 @@ function pemToDer(input) {
 
 const CERT_DER = pemToDer(CERT_PEM);
 
+// Right now this API is a bit funky - the callback will be called with a Frida Module instance
+// if the module is properly detected, but may be called with just { name, path, base, size }
+// in some cases (e.g. shared libraries loaded from inside an APK on Android). Works OK right now,
+// as it's not widely used but needs improvement in future if we extend this.
 function waitForModule(moduleName, callback) {
     if (Array.isArray(moduleName)) {
         moduleName.forEach(module => waitForModule(module, callback));
@@ -195,14 +199,24 @@ new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((
         onEnter(args) {
             const moduleArg = args[0].readCString();
             if (moduleArg) {
+                this.path = moduleArg;
                 this.moduleName = getModuleName(moduleArg);
             }
         },
-        onLeave() {
-            if (!this.moduleName) return;
+        onLeave(retval) {
+            if (!this.path || retval.isNull()) return;
+            if (!MODULE_LOAD_CALLBACKS[this.moduleName]) return;
 
-            const module = Process.findModuleByName(this.moduleName);
-            if (!module) return;
+            let module = Process.findModuleByName(this.moduleName)
+                ?? Process.findModuleByAddress(retval);
+            if (!module) {
+                // Some modules are loaded in ways that mean Frida can't detect them, and
+                // can't look them up by name (notably when loading libraries from inside an
+                // APK on Android). To handle this, we can use dlsym to look up an example
+                // symbol and find the underlying module details directly, where possible.
+                module = getAnonymousModule(this.moduleName, this.path, retval);
+                if (!module) return;
+            }
 
             Object.keys(MODULE_LOAD_CALLBACKS).forEach((key) => {
                 if (this.moduleName === key) {
@@ -215,3 +229,28 @@ new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((
         }
     });
 });
+
+const getAnonymousModule = (name, path, handle) => {
+    const dlsymAddr = Module.findGlobalExportByName('dlsym');
+    if (!dlsymAddr) {
+        console.error(`[!] Cannot find dlsym, cannot get anonymous module info for ${name}`);
+        return;
+    }
+
+    const dlsym = new NativeFunction(dlsymAddr, 'pointer', ['pointer', 'pointer']);
+
+    // Handle here is the return value from dlopen - but in this scenario, it's just an
+    // opaque handle into to 'soinfo' data that other methods can use to get the
+    // real pointer to parts of the module, like so:
+    const onLoadPointer = dlsym(handle, Memory.allocUtf8String('JNI_OnLoad'));
+
+    // Once we have an actual pointer, we can get the range that holds it:
+    const range = Process.getRangeByAddress(onLoadPointer);
+
+    return {
+        base: range.base,
+        size: range.size,
+        name,
+        path,
+    }
+}
