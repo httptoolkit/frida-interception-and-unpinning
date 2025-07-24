@@ -130,11 +130,10 @@
                     this.state = 'ignored';
                 }
             } else if (DEBUG_MODE) {
+                // Should just be unix domain sockets - UDP & TCP are covered above
                 console.log(`Ignoring ${sockType} connection`);
                 this.state = 'ignored';
             }
-
-            // N.b. we ignore all non-TCP connections: both UDP and Unix streams
         },
         onLeave: function (retval) {
             if (!DEBUG_MODE || this.state === 'ignored') return;
