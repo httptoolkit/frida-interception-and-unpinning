@@ -54,7 +54,7 @@ const PROXY_SUPPORTS_SOCKS5 = false;
 if (DEBUG_MODE) {
     // Add logging just for clean output & to separate reloads:
     console.log('\n*** Starting scripts ***');
-    if (Java.available) {
+    if (globalThis.Java?.available) {
         Java.perform(() => {
             setTimeout(() => console.log('*** Scripts completed ***\n'), 5);
             // (We assume that nothing else will take more than 5ms, but app startup

@@ -33,9 +33,9 @@
     try {
         const systemModule = Process.findModuleByName('libc.so') ?? // Android
                              Process.findModuleByName('libc.so.6') ?? // Linux
-                             Process.findModuleByName('libsystem_kernel.dylib'); // iOS
+                             Process.findModuleByName('libsystem_c.dylib'); // iOS
 
-        if (!systemModule) throw new Error("Could not find libc or libsystem_kernel");
+        if (!systemModule) throw new Error("Could not find libc or libsystem_c");
 
         fcntl = new NativeFunction(systemModule.getExportByName('fcntl'), 'int', ['int', 'int', 'int']);
         send = new NativeFunction(systemModule.getExportByName('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
