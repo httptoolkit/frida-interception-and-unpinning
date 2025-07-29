@@ -68,6 +68,11 @@
                 const shouldBeIgnored = IGNORED_NON_HTTP_PORTS.includes(port);
                 const shouldBeBlocked = BLOCK_HTTP3 && !shouldBeIgnored && isUDP && port === 443;
 
+                // N.b for now we only support TCP interception - UDP direct should be doable,
+                // but SOCKS5 UDP would require a whole different flow. Rarely relevant, especially
+                // if you're blocking HTTP/3.
+                const shouldBeIntercepted = isTCP && !shouldBeIgnored && !shouldBeBlocked;
+
                 const hostBytes = isIPv6
                     // 16 bytes offset by 8 (2 for family, 2 for port, 4 for flowinfo):
                     ? new Uint8Array(addrData.slice(8, 8 + 16))
@@ -92,8 +97,10 @@
                         // Skip 4 bytes: 2 family, 2 port, then write 0.0.0.0
                         addrPtr.add(4).writeU32(0);
                     }
+
+                    console.debug(`Blocking QUIC connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
                     this.state = 'Blocked';
-                } else if (!shouldBeIgnored) {
+                } else if (shouldBeIntercepted) {
                     // Otherwise, it's an unintercepted connection that should be captured:
                     this.state = 'intercepting';
 
@@ -108,7 +115,7 @@
                         }
                     }
 
-                    console.log(`Manually intercepting connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
+                    console.log(`Manually intercepting ${sockType} connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
 
                     // Overwrite the port with the proxy port:
                     portAddrBytes.setUint16(0, PROXY_PORT, false); // Big endian
@@ -125,46 +132,44 @@
                 } else {
                     // Explicitly being left alone
                     if (DEBUG_MODE) {
-                        console.debug(`Allowing unintercepted connection to port ${port}`);
+                        console.debug(`Allowing unintercepted ${sockType} connection to port ${port}`);
                     }
                     this.state = 'ignored';
                 }
-            } else if (DEBUG_MODE) {
+            } else {
                 // Should just be unix domain sockets - UDP & TCP are covered above
-                console.log(`Ignoring ${sockType} connection`);
+                if (DEBUG_MODE) console.log(`Ignoring ${sockType} connection`);
                 this.state = 'ignored';
             }
         },
         onLeave: function (retval) {
-            if (!DEBUG_MODE || this.state === 'ignored') return;
+            if (this.state === 'ignored') return;
 
-            if (this.state === 'intercepting') {
+            if (this.state === 'intercepting' && PROXY_SUPPORTS_SOCKS5) {
                 const connectSuccess = retval.toInt32() === 0;
 
-                if (PROXY_SUPPORTS_SOCKS5) {
-                    let handshakeSuccess = false;
+                let handshakeSuccess = false;
 
-                    const { host, port, isIPv6 } = this.originalDestination;
-                    if (connectSuccess) {
-                        handshakeSuccess = performSocksHandshake(this.sockFd, host, port, isIPv6);
-                    } else {
-                        console.error(`SOCKS: Failed to connect to proxy at ${PROXY_HOST}:${PROXY_PORT}`);
-                    }
-
-                    if (this.isNonBlocking) {
-                        fcntl(this.sockFd, F_SETFL, this.originalFlags);
-                    }
-
-                    if (handshakeSuccess) {
-                        const readableHost = getReadableAddress(host, isIPv6);
-                        if (DEBUG_MODE) console.debug(`SOCKS redirect successful for fd ${this.sockFd} to ${readableHost}:${port}`);
-                        retval.replace(0);
-                    } else {
-                        if (DEBUG_MODE) console.error(`SOCKS redirect FAILED for fd ${this.sockFd}`);
-                        retval.replace(-1);
-                    }
+                const { host, port, isIPv6 } = this.originalDestination;
+                if (connectSuccess) {
+                    handshakeSuccess = performSocksHandshake(this.sockFd, host, port, isIPv6);
+                } else {
+                    console.error(`SOCKS: Failed to connect to proxy at ${PROXY_HOST}:${PROXY_PORT}`);
                 }
-            } else {
+
+                if (this.isNonBlocking) {
+                    fcntl(this.sockFd, F_SETFL, this.originalFlags);
+                }
+
+                if (handshakeSuccess) {
+                    const readableHost = getReadableAddress(host, isIPv6);
+                    if (DEBUG_MODE) console.debug(`SOCKS redirect successful for fd ${this.sockFd} to ${readableHost}:${port}`);
+                    retval.replace(0);
+                } else {
+                    if (DEBUG_MODE) console.error(`SOCKS redirect FAILED for fd ${this.sockFd}`);
+                    retval.replace(-1);
+                }
+            } else if (DEBUG_MODE) {
                 const fd = this.sockFd;
                 const sockType = Socket.type(fd);
                 const address = Socket.peerAddress(fd);

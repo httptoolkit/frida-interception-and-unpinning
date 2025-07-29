@@ -34,8 +34,7 @@ const IGNORED_NON_HTTP_PORTS = [];
 
 // As HTTP/3 is often not well supported by MitM proxies, by default it
 // is blocked entirely, so all outgoing UDP connections to port 443
-// will fail. If this is set to false, they will instead be redirected
-// to the same proxy port & address as TCP connections.
+// will fail. If this is set to false, they will instead be left unintercepted.
 const BLOCK_HTTP3 = true;
 
 // Set this to true if your proxy supports SOCKS5 connections.
