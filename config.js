@@ -203,7 +203,7 @@ new ApiResolver('module').enumerateMatches('exports:linker*!*dlopen*').forEach((
             }
         },
         onLeave(retval) {
-            if (!this.path || retval.isNull()) return;
+            if (!this.path || !retval || retval.isNull()) return;
             if (!MODULE_LOAD_CALLBACKS[this.moduleName]) return;
 
             let module = Process.findModuleByName(this.moduleName)
@@ -252,4 +252,4 @@ const getAnonymousModule = (name, path, handle) => {
         name,
         path,
     }
-}
+};
