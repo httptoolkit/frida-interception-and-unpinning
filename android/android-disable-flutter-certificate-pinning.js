@@ -167,7 +167,7 @@
         return results;
     }
 
-    function scanForFunction(moduleBase, moduleSize, platformPatterns, functionName, anchorFn) {
+    function scanForFunction(moduleRXRanges, platformPatterns, functionName, anchorFn) {
         const patternInfo = platformPatterns[functionName];
         const signatures = patternInfo.signatures;
 
@@ -193,7 +193,7 @@
 
             throw new Error(`Failed to find any match for ${functionName} anchored by ${anchorFn}`);
         } else {
-            const results = scanForSignature(moduleBase, moduleSize, signatures);
+            const results = moduleRXRanges.flatMap((range) => scanForSignature(range.base, range.size, signatures));
             if (results.length !== 1 && signatures.length > 1) {
                 console.log(results);
                 throw new Error(`Found multiple matches for ${functionName}`);
@@ -206,6 +206,10 @@
     function hookFlutter(moduleBase, moduleSize) {
         if (DEBUG_MODE) console.log('\n=== Disabling Flutter certificate pinning ===');
 
+        const relevantRanges = Process.enumerateRanges('r-x').filter(range => {
+            return range.base >= moduleBase && range.base < moduleBase.add(moduleSize);
+        });
+
         try {
             const arch = Process.arch;
             const patterns = PATTERNS[`android/${arch}`];
@@ -214,7 +218,7 @@
             // trusts the cert, or it calls the configured BadCertificateCallback if it doesn't. Note that this
             // is called for every cert in the chain individually - not the whole chain at once.
             const dartCertificateCallback = new NativeFunction(
-                scanForFunction(moduleBase, moduleSize, patterns, 'dart::bin::SSLCertContext::CertificateCallback'),
+                scanForFunction(relevantRanges, patterns, 'dart::bin::SSLCertContext::CertificateCallback'),
                 'int',
                 ['int', 'pointer']
             );
@@ -222,15 +226,15 @@
             // We inject code to check the certificate ourselves - getting the cert, converting to DER, and
             // ignoring all validation results if the certificate matches our trusted cert.
             const x509GetCurrentCert = new NativeFunction(
-                scanForFunction(moduleBase, moduleSize, patterns, 'X509_STORE_CTX_get_current_cert', dartCertificateCallback),
+                scanForFunction(relevantRanges, patterns, 'X509_STORE_CTX_get_current_cert', dartCertificateCallback),
                 'pointer',
                 ['pointer']
             );
 
             // Just used as an anchor for searching:
-            const x509ToBufferAddr = scanForFunction(moduleBase, moduleSize, patterns, 'bssl::x509_to_buffer');
+            const x509ToBufferAddr = scanForFunction(relevantRanges, patterns, 'bssl::x509_to_buffer');
             const i2d_X509 = new NativeFunction(
-                scanForFunction(moduleBase, moduleSize, patterns, 'i2d_X509', x509ToBufferAddr),
+                scanForFunction(relevantRanges, patterns, 'i2d_X509', x509ToBufferAddr),
                 'int',
                 ['pointer', 'pointer']
             );
