@@ -203,7 +203,7 @@ describe('Test Android unpinning', function () {
 
         it("all requests should fail", async () => {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
-            expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
+            expect(buttons).to.have.lengthOf(14, 'Expected buttons were not present');
 
             for (let button of buttons) {
                 await testButton(button, 'Failed');
@@ -220,7 +220,7 @@ describe('Test Android unpinning', function () {
 
         it('all buttons should succeed initially', async () => {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
-            expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
+            expect(buttons).to.have.lengthOf(14, 'Expected buttons were not present');
 
             for (let button of buttons) {
                 const buttonText = await button.getText();
@@ -250,7 +250,7 @@ describe('Test Android unpinning', function () {
 
         it("all unpinned requests should succeed, most others should fail", async () => {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
-            expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
+            expect(buttons).to.have.lengthOf(14, 'Expected buttons were not present');
 
             for (let button of buttons) {
                 const buttonText = await button.getText();
@@ -280,7 +280,7 @@ describe('Test Android unpinning', function () {
 
         it("all buttons except 'Raw custom-pinned request' should succeed", async () => {
             const buttons = await driver.$$('android=new UiSelector().className("android.widget.Button")');
-            expect(buttons).to.have.lengthOf(13, 'Expected buttons were not present');
+            expect(buttons).to.have.lengthOf(14, 'Expected buttons were not present');
 
             for (let button of buttons) {
                 const buttonText = await button.getText();
