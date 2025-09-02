@@ -40,8 +40,7 @@ The scripts can automatically handle:
         -l ./android/android-system-certificate-injection.js \
         -l ./android/android-certificate-unpinning.js \
         -l ./android/android-certificate-unpinning-fallback.js \
-        -l ./android/android-disable-root-detection.js \
-        -l ./android/android-disable-flutter-certificate-pinning.js \
+        -l ./android/android-disable-root-detection.js
         -f $PACKAGE_ID
     ```
 7. Explore, examine & modify all the traffic you're interested in! If you have any problems, please [open an issue](https://github.com/httptoolkit/frida-interception-and-unpinning/issues/new) and help make these scripts even better.
@@ -143,7 +142,7 @@ Each script includes detailed documentation on what it does and how it works in 
 
     * `android-disable-flutter-certificate-pinning.js`
 
-        Ensures that Flutter-based applications (which generally ignore the system certificate configuration) trust your CA certificate, even in most cases of explicit certificate pinning.
+        Ensures that Flutter-based applications (which generally ignore the system certificate configuration) trust your CA certificate, even in most cases of explicit certificate pinning. This script remains experimental for now.
 
 * `ios/`
 
