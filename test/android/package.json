@@ -12,7 +12,7 @@
   "dependencies": {
     "@httptoolkit/util": "^0.1.6",
     "@types/chai": "^5.2.2",
-    "appium": "^3.0.2",
+    "appium": "^3.1.1",
     "appium-uiautomator2-driver": "^5.0.3",
     "chai": "^5.2.0",
     "mocha": "^11.7.1",
