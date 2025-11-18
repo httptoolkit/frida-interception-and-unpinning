@@ -99,9 +99,9 @@ function patchTargetLib(targetModule, targetName) {
 
     const buildVerificationCallback = (realCallbackAddr) => {
         if (!verificationCallbackCache[realCallbackAddr]) {
-            const realCallback = (!realCallbackAddr || realCallbackAddr.isNull())
-                ? new NativeFunction(realCallbackAddr, 'int', ['pointer','pointer'])
-                : () => SSL_VERIFY_INVALID; // Callback can be null - treat as invalid (=our validation only)
+            const realCallback = (realCallbackAddr && !realCallbackAddr.isNull())
+                ? new NativeFunction(realCallbackAddr, 'int', ['pointer', 'pointer'])
+                : () => SSL_VERIFY_INVALID;
 
             let pendingCheckThreads = new Set();
 
