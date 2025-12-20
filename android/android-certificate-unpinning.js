@@ -130,6 +130,15 @@ const PINNING_FIXES = {
         }
     ],
 
+    // --- Native Conscrypt CertificateTransparency
+
+    'com.android.org.conscrypt.ct.CertificateTransparency': [
+        {
+            methodName: 'checkCT',
+            replacement: () => NO_OP
+        }
+    ],
+
     // --- Native pinning configuration loading (used for configuration by many libraries)
 
     'android.security.net.config.NetworkSecurityConfig': [
