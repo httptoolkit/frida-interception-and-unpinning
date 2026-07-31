@@ -162,9 +162,16 @@ const PINNING_FIXES = {
             replacement: (targetMethod) => {
                 const PinSet = Java.use('android.security.net.config.PinSet');
                 const EMPTY_PINSET = PinSet.EMPTY_PINSET.value;
+
+                // The pins position in the constructor moves between Android versions (Android
+                // 15 inserted a certificate transparency argument) so match args by type:
+                const pinsIndex = targetMethod.argumentTypes.findIndex(
+                    (argType) => argType.className === 'android.security.net.config.PinSet'
+                );
+
                 return function () {
-                    // Always ignore the 2nd 'pins' PinSet argument entirely:
-                    arguments[2] = EMPTY_PINSET;
+                    // Always ignore the 'pins' PinSet argument entirely:
+                    if (pinsIndex !== -1) arguments[pinsIndex] = EMPTY_PINSET;
                     targetMethod.call(this, ...arguments);
                 }
             }
