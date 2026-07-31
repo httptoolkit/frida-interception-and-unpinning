@@ -7,7 +7,7 @@ import { DeviceApp, delay, readUi } from './device.ts';
 
 const APP_ID = 'tech.httptoolkit.pinning_demo';
 
-const app = new DeviceApp(APP_ID);
+const app = new DeviceApp(APP_ID, 'SSL Pinning Demo');
 
 type Result = 'Success' | 'Failed';
 
@@ -174,15 +174,18 @@ describe('Test Android unpinning', function () {
 
                 const ui = await readUi();
 
-                // A crash or ANR dialog covers the app, so report that rather than just timing out:
+                // A crash or ANR dialog for our app covers it, so report that rather than just
+                // timing out. Dialogs about other apps (a launcher that's hung on a slow emulator,
+                // say) only get in the way, so those we dismiss and keep waiting:
                 const systemError = app.systemErrorDialog(ui);
                 if (systemError) return `Android reported: "${systemError}"`;
+                await app.dismissOtherAppErrors(ui);
 
                 // The previous instance's window can linger on screen briefly after it's killed,
                 // so we wait for Frida to confirm the launch, not just for the app to be visible:
                 if (
                     output().includes(`Spawned \`${APP_ID}\``) &&
-                    app.hasText(ui, 'SSL Pinning Demo')
+                    app.isOnScreen(ui)
                 ) return undefined;
 
                 // N.b. this must await something on every pass, or we'd starve the event loop and

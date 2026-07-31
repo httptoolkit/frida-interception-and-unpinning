@@ -64,9 +64,11 @@ const parseNodes = (xml: string) => {
  */
 export const readUi = async (): Promise<UiNode[]> => {
     // Dumping is rejected while the UI is busy or wedged. That's worth waiting out rather than
-    // failing immediately: if the app has hung, Android puts an ANR dialog up within a few
-    // seconds, and reporting that is far more useful than reporting a failed dump.
-    const ATTEMPTS = 20;
+    // failing immediately: if something has hung, Android takes ~15s to declare the ANR (5s of
+    // unhandled input, then collecting stack traces) and only then puts up a dialog and logs the
+    // reason. Waiting past that means we report which app hung and why, instead of just a dump
+    // that didn't work.
+    const ATTEMPTS = 60;
 
     for (let attempt = 1; ; attempt++) {
         // Dumping to /dev/tty streams the XML straight back to us, avoiding a second round trip
@@ -106,9 +108,11 @@ export class DeviceApp {
     // N.b. no parameter properties - Node's type stripping only erases types, it can't
     // generate the assignment those imply:
     private appId: string;
+    private appName: string; // As shown in the UI, e.g. in Android's own dialogs about the app
 
-    constructor(appId: string) {
+    constructor(appId: string, appName: string) {
         this.appId = appId;
+        this.appName = appName;
     }
 
     /**
@@ -156,19 +160,46 @@ export class DeviceApp {
         return this.ownNodes(nodes).filter((node) => node.className === 'android.widget.Button');
     }
 
-    hasText(nodes: UiNode[], text: string) {
-        return this.ownNodes(nodes).some((node) => node.text === text);
+    isOnScreen(nodes: UiNode[]) {
+        return this.ownNodes(nodes).some((node) => node.text === this.appName);
+    }
+
+    private errorDialogs(nodes: UiNode[]) {
+        return nodes.filter((node) =>
+            node.packageName === 'android' &&
+            /isn't responding|keeps stopping|has stopped/i.test(node.text)
+        );
     }
 
     /**
-     * Android's own crash & ANR dialogs. These cover the app, hiding it from everything we query,
-     * so without this a crash looks like a button that never responded.
+     * Android's own crash & ANR dialog for the app under test. These cover the app, hiding it from
+     * everything we query, so without this a crash looks like a button that never responded.
      */
     systemErrorDialog(nodes: UiNode[]) {
-        return nodes.find((node) =>
-            node.packageName === 'android' &&
-            /isn't responding|keeps stopping|has stopped/i.test(node.text)
-        )?.text;
+        // N.b. it must name our app: dialogs about anything else aren't a failure of ours.
+        return this.errorDialogs(nodes).find((node) => node.text.includes(this.appName))?.text;
+    }
+
+    /**
+     * The same dialogs, but about some other app - a launcher that's hung on a slow emulator,
+     * typically. Not our problem, except that they sit on top of the app and hide it, so we
+     * dismiss them and carry on.
+     */
+    async dismissOtherAppErrors(nodes: UiNode[]) {
+        const otherError = this.errorDialogs(nodes)
+            .find((node) => !node.text.includes(this.appName));
+        if (!otherError) return false;
+
+        const dismiss = (text: string) => nodes.find((node) =>
+            node.packageName === 'android' && node.text === text
+        );
+        // 'Wait' leaves the other app alone, so we prefer it to closing it:
+        const button = dismiss('Wait') ?? dismiss('Close app');
+        if (!button) return false;
+
+        console.log(`Dismissing an unrelated system dialog: "${otherError.text}"`);
+        await this.tap(button);
+        return true;
     }
 
     private assertNotCrashed(nodes: UiNode[]) {
@@ -198,18 +229,29 @@ export class DeviceApp {
     }
 
     /**
+     * A UI read that explains itself: if the screen can't be read at all, that's usually because
+     * something has hung, and Android will have logged which app & why.
+     */
+    private async readUiOrExplain() {
+        return readUi().catch(async (e) => {
+            const androidLogs = await this.recentFailureLogs();
+            throw new Error(e.message + (androidLogs ? `\nAndroid logged:\n${androidLogs}` : ''));
+        });
+    }
+
+    /**
      * Read the app's own view of the screen, waiting for it if something (e.g. a toast) is
      * currently on top of it.
      */
     private async readApp() {
         for (let i = 0; i < 20; i++) {
-            const nodes = await readUi();
+            const nodes = await this.readUiOrExplain();
             this.assertNotCrashed(nodes);
 
             const scrollable = this.scrollable(nodes);
             if (scrollable) return { nodes, scrollable };
 
-            await delay(500);
+            if (!await this.dismissOtherAppErrors(nodes)) await delay(500);
         }
 
         throw new Error(`${this.appId} was not on screen`);
@@ -299,7 +341,7 @@ export class DeviceApp {
         let retapped = false;
 
         while (true) {
-            const nodes = await readUi();
+            const nodes = await this.readUiOrExplain();
             this.assertNotCrashed(nodes);
 
             const button = this.buttons(nodes).find((b) => b.text === text);
