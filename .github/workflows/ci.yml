@@ -72,7 +72,7 @@ jobs:
 
       - name: Install Frida CLI
         run: |
-          pip install --user frida-tools
+          pip install --user frida-tools==14.10.4
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       # Apparently significantly improves emulator performance:
