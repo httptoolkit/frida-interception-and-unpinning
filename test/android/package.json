@@ -1,23 +1,15 @@
 {
   "name": "frida-scripts-android-tests",
   "private": true,
+  "type": "module",
   "scripts": {
     "test": "mocha test.ts"
   },
-  "mocha": {
-    "node-option": [
-      "import=tsx"
-    ]
-  },
   "dependencies": {
-    "@httptoolkit/util": "^0.1.6",
     "@types/chai": "^5.2.2",
-    "appium": "^3.6.0",
-    "appium-uiautomator2-driver": "^5.0.3",
     "chai": "^5.2.0",
+    "fast-xml-parser": "^5.3.0",
     "mocha": "^11.7.1",
-    "mockttp": "^4.0.1",
-    "tsx": "^4.22.4",
-    "webdriverio": "^9.16.2"
+    "mockttp": "^4.0.1"
   }
 }
