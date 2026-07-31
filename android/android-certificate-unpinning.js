@@ -468,7 +468,24 @@ const PINNING_FIXES = {
 
 const getJavaClassIfExists = (clsName) => {
     try {
-        return Java.use(clsName);
+        const TargetClass = Java.use(clsName);
+
+        // Hooks applied to a class that hasn't been initialized yet can be silently dropped when
+        // the runtime does eventually initialize it - patches then appear to apply, but never
+        // take effect (seen on Android 11 with app-bundled libraries, which are only initialized
+        // on first use, i.e. long after we get here). Initializing it now avoids that:
+        try {
+            Java.use('java.lang.Class').forName(
+                clsName,
+                true, // Initialize
+                TargetClass.class.getClassLoader()
+            );
+        } catch (e) {
+            // A class whose initializer fails is still worth patching, so this isn't fatal:
+            if (DEBUG_MODE) console.log(`[ ] Could not initialize ${clsName}: ${e.message}`);
+        }
+
+        return TargetClass;
     } catch {
         return undefined;
     }
