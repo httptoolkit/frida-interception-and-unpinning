@@ -62,21 +62,32 @@ Java.perform(() => {
         }
 
         try {
-            TrustedCertificateIndex.$init.overloads.forEach((overload) => {
-                overload.implementation = function () {
-                    this.$init(...arguments);
-                    // Index our cert as already trusted, right from the start:
-                    this.index(cert);
-                }
-            });
+            // Every read of the index goes through one of its find* methods - the map behind them
+            // is private, and nothing outside Conscrypt itself touches it. So we hook those and
+            // index our cert in every case before any lookup happens.
+            // Note that hook $init instead doesn't work - in some cases (Android 8, where Conscrypt
+            // is AOT-compiled ahead of time) we miss some constructions.
+            const findMethodNames = new Set(
+                TrustedCertificateIndex.class.getDeclaredMethods()
+                    .map((method) => method.getName())
+                    .filter((methodName) => methodName.startsWith('find'))
+            );
 
-            TrustedCertificateIndex.reset.overloads.forEach((overload) => {
-                overload.implementation = function () {
-                    const result = this.reset(...arguments);
-                    // Index our cert in here again, since the reset removes it:
-                    this.index(cert);
-                    return result;
-                };
+            findMethodNames.forEach((methodName) => {
+                TrustedCertificateIndex[methodName].overloads
+                    .filter((overload) =>
+                        overload.argumentTypes.length === 1 &&
+                        overload.argumentTypes[0].className === 'java.security.cert.X509Certificate'
+                    )
+                    .forEach((overload) => {
+                        overload.implementation = function () {
+                            if (!this.findBySubjectAndPublicKey(cert)) {
+                                this.index(cert);
+                            }
+
+                            return overload.apply(this, arguments);
+                        };
+                    });
             });
 
             if (DEBUG_MODE) console.log(`[+] Injected cert into ${TrustedCertificateIndexClassname}`);
