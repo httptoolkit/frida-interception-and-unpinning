@@ -338,16 +338,12 @@ describe('Test Android unpinning', function () {
             ]);
         });
 
-        it("all buttons should succeed, except the known unsupported cases", async () => {
+        it("all buttons should succeed, except the raw custom-pinned request", async () => {
             await testAllButtons('Success', {
                 exceptions: [
                     // This checks the certificate itself, by hand, at the lowest level. Unpinning
                     // it requires reverse engineering the app - see the demo app's README.
-                    'RAW CUSTOM-PINNED REQUEST',
-                    // The Flutter hooks find their targets by scanning for byte patterns, and
-                    // those don't match the Flutter version this app now ships, so Flutter
-                    // traffic is not unpinned at all here:
-                    'FLUTTER REQUEST'
+                    'RAW CUSTOM-PINNED REQUEST'
                 ]
             });
         });
