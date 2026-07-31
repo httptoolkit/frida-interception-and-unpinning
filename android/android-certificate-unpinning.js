@@ -169,6 +169,11 @@ const PINNING_FIXES = {
                     (argType) => argType.className === 'android.security.net.config.PinSet'
                 );
 
+                if (pinsIndex === -1) {
+                    console.warn('[!] No PinSet argument in NetworkSecurityConfig constructor - ' +
+                        'config-defined certificate pinning will not be disabled');
+                }
+
                 return function () {
                     // Always ignore the 'pins' PinSet argument entirely:
                     if (pinsIndex !== -1) arguments[pinsIndex] = EMPTY_PINSET;
