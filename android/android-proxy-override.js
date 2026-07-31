@@ -78,12 +78,20 @@ Java.perform(() => {
     const ProxySelector = Java.use('java.net.ProxySelector');
 
     // Find every implementation of ProxySelector by quickly scanning method signatures, and
-    // then checking whether each match actually implements java.net.ProxySelector:
-    const proxySelectorClasses = Java.enumerateMethods('*!select(java.net.URI): java.util.List/s')
-        .flatMap((matchingLoader) => matchingLoader.classes
-            .map((classData) => Java.use(classData.name))
-            .filter((Cls) => ProxySelector.class.isAssignableFrom(Cls.class))
-        );
+    // then checking whether each match actually implements java.net.ProxySelector.
+    //
+    // Scanning every class is slow, so we can the apps own classes in full, but scan platform
+    // classes only for *Proxy* (matches all known cases).
+    const selectorClassNames = new Set([
+        '*Proxy*!select(java.net.URI): java.util.List/s',
+        '*!select(java.net.URI): java.util.List/su'
+    ].flatMap((query) => Java.enumerateMethods(query))
+        .flatMap((matchingLoader) => matchingLoader.classes.map((classData) => classData.name))
+    );
+
+    const proxySelectorClasses = [...selectorClassNames]
+        .map((className) => Java.use(className))
+        .filter((Cls) => ProxySelector.class.isAssignableFrom(Cls.class));
 
     // Replace the 'select' of every implementation, so they all send traffic to us:
     proxySelectorClasses.forEach(ProxySelectorCls => {
