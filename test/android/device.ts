@@ -111,10 +111,6 @@ export class DeviceApp {
         this.appId = appId;
     }
 
-    async apiLevel() {
-        return parseInt(await adb('shell', 'getprop', 'ro.build.version.sdk'), 10);
-    }
-
     /**
      * Anything Android itself logged about the app crashing or hanging. When something goes wrong
      * this usually explains it far better than the symptoms we can see from outside.
@@ -180,14 +176,15 @@ export class DeviceApp {
         if (error) throw new Error(`Android reported a problem with the app: "${error}"`);
     }
 
+    // N.b. this can legitimately be missing for a moment: a toast (this app shows one for every
+    // failed request) is a separate window, and while it's up the app may not appear in the UI at
+    // all. Callers wait for the app to come back rather than treating that as fatal.
     private scrollable(nodes: UiNode[]) {
-        const scrollable = this.ownNodes(nodes).find((node) => node.scrollable);
-        if (!scrollable) throw new Error(`No scrollable view found in ${this.appId}`);
-        return scrollable;
+        return this.ownNodes(nodes).find((node) => node.scrollable);
     }
 
-    private async swipe(nodes: UiNode[], direction: 'up' | 'down') {
-        const [left, top, right, bottom] = this.scrollable(nodes).bounds;
+    private async swipe(scrollable: UiNode, direction: 'up' | 'down') {
+        const [left, top, right, bottom] = scrollable.bounds;
 
         // We swipe within the middle of the view, to stay clear of the system gesture areas at
         // the very top & bottom of the screen:
@@ -200,16 +197,34 @@ export class DeviceApp {
         await adb('shell', 'input', 'swipe', `${x}`, `${from}`, `${x}`, `${to}`, '300');
     }
 
+    /**
+     * Read the app's own view of the screen, waiting for it if something (e.g. a toast) is
+     * currently on top of it.
+     */
+    private async readApp() {
+        for (let i = 0; i < 20; i++) {
+            const nodes = await readUi();
+            this.assertNotCrashed(nodes);
+
+            const scrollable = this.scrollable(nodes);
+            if (scrollable) return { nodes, scrollable };
+
+            await delay(500);
+        }
+
+        throw new Error(`${this.appId} was not on screen`);
+    }
+
     async scrollToTop() {
         let previousPosition = '';
 
         for (let i = 0; i < 30; i++) {
-            const nodes = await readUi();
-            const position = positionSummary(nodes);
+            const { nodes, scrollable } = await this.readApp();
+            const position = positionSummary(this.ownNodes(nodes));
             if (position === previousPosition) return;
 
             previousPosition = position;
-            await this.swipe(nodes, 'down');
+            await this.swipe(scrollable, 'down');
         }
     }
 
@@ -227,17 +242,17 @@ export class DeviceApp {
         // We're at the end once scrolling stops changing what's on screen. Two unchanged pages
         // are required, so a single swipe that doesn't register can't quietly cut the list short:
         for (let i = 0; i < 30 && unchangedPages < 2; i++) {
-            const nodes = await readUi();
+            const { nodes, scrollable } = await this.readApp();
 
             for (const button of this.buttons(nodes)) {
                 if (button.text && !buttons.includes(button.text)) buttons.push(button.text);
             }
 
-            const position = positionSummary(nodes);
+            const position = positionSummary(this.ownNodes(nodes));
             unchangedPages = position === previousPosition ? unchangedPages + 1 : 0;
             previousPosition = position;
 
-            await this.swipe(nodes, 'up');
+            await this.swipe(scrollable, 'up');
         }
 
         return buttons;
@@ -251,18 +266,17 @@ export class DeviceApp {
         let direction: 'up' | 'down' = 'up';
 
         for (let i = 0; i < 40; i++) {
-            const nodes = await readUi();
-            this.assertNotCrashed(nodes);
+            const { nodes, scrollable } = await this.readApp();
 
             const button = this.buttons(nodes).find((b) => b.text === text);
-            if (button && contains(this.scrollable(nodes).bounds, button.bounds)) return button;
+            if (button && contains(scrollable.bounds, button.bounds)) return button;
 
             // If we've hit the end of the list without finding it, turn around and search back:
-            const position = positionSummary(nodes);
+            const position = positionSummary(this.ownNodes(nodes));
             if (position === previousPosition) direction = direction === 'up' ? 'down' : 'up';
             previousPosition = position;
 
-            await this.swipe(nodes, direction);
+            await this.swipe(scrollable, direction);
         }
 
         throw new Error(`Could not scroll to button '${text}'`);

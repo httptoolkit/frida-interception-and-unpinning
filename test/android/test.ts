@@ -209,7 +209,13 @@ describe('Test Android unpinning', function () {
         });
 
         expect(description).to.be.a('string', `Button ${text} did not respond`);
-        expect(description).to.include(expected, `Button ${text} was not ${expected}:`);
+
+        // Matching the app's exact wording, so that a failure whose error message happens to
+        // mention success can't be read as one:
+        expect(description).to.include(
+            expected === 'Success' ? ' - Success' : ' - Failed with error:',
+            `Button ${text} was not ${expected}:`
+        );
     };
 
     // Test every button in the app, expecting the given result for each, except for the buttons
@@ -218,7 +224,16 @@ describe('Test Android unpinning', function () {
         expected: Result,
         { exceptions = [] }: { exceptions?: string[] } = {}
     ) => {
-        const buttons = await app.findAllButtons();
+        // If the app dies mid-test we see only its absence, so we say what Android saw too:
+        const buttons = await app.findAllButtons().catch(async (e) => {
+            const androidLogs = await app.recentFailureLogs();
+            throw new Error(
+                `${e.message}` +
+                (await app.isRunning() ? '' : '. The app is no longer running') +
+                (androidLogs ? `.\nAndroid logged:\n${androidLogs}` : '')
+            );
+        });
+
         console.log(`Testing ${buttons.length} buttons: ${buttons.join(', ')}`);
 
         // Without this, a scenario with no exceptions would pass having tested nothing at all:
@@ -282,7 +297,7 @@ describe('Test Android unpinning', function () {
 
     describe("given basic interception", () => {
 
-        beforeEach(async function () {
+        beforeEach(async () => {
             await launchFrida([
                 './test/android/tmp/config.js', // Our custom config
                 // Otherwise just the basic Android settings injection scripts to set the
@@ -290,11 +305,6 @@ describe('Test Android unpinning', function () {
                 './android/android-proxy-override.js',
                 './android/android-system-certificate-injection.js'
             ]);
-
-            // Android <10 uses X509TrustManager (not the cert stores hooked by system-certificate-injection)
-            // so this fails without the unpinning scripts - not really a problem in practice, but unhelpful
-            // for testing.
-            if (await app.apiLevel() <= 28) return this.skip();
         });
 
         it("everything should succeed except the explicitly pinned requests", async () => {

@@ -24,11 +24,14 @@ if [ "$INSTALLED_VERSION" != "$APK_VERSION" ]; then
     wget -q $APK_URL -O $APK_PATH
   fi
   # A locally built (or otherwise differently signed) copy of the app can't be upgraded in
-  # place, so if the install is rejected we replace it outright:
-  if ! adb install -r $APK_PATH; then
+  # place, so in that specific case we replace it outright. Anything else (e.g. the device
+  # having no matching ABI) we report as-is, rather than muddying it with a failed uninstall:
+  INSTALL_RESULT=$(adb install -r $APK_PATH 2>&1) || {
+    echo "$INSTALL_RESULT"
+    echo "$INSTALL_RESULT" | grep -q INSTALL_FAILED_UPDATE_INCOMPATIBLE
     adb uninstall $PACKAGE
     adb install $APK_PATH
-  fi
+  }
   echo "APK v$APK_VERSION installed (previously: ${INSTALLED_VERSION:-not installed})."
 else
   echo "APK v$APK_VERSION already installed."
