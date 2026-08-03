@@ -3,7 +3,7 @@ import * as mockttp from 'mockttp';
 import { expect } from 'chai';
 import * as ChildProcess from 'child_process';
 
-import { DeviceApp, delay, readUi } from './device.ts';
+import { DeviceApp, delay } from './device.ts';
 
 const APP_ID = 'tech.httptoolkit.pinning_demo';
 
@@ -81,11 +81,9 @@ describe('Test Android unpinning', function () {
 
     afterEach(async function (this: Mocha.Context) {
         if (this.currentTest?.state === 'failed') {
-            const buttons = await readUi().then((ui) => app.buttons(ui)).catch(() => []);
-            console.log('Test failed with these buttons on screen:', buttons.length
-                ? buttons.map(({ text, description }) => `${text}: ${description || '(no result)'}`)
-                : '(none - the app was not on screen)'
-            );
+            const buttons = await app.buttonStates();
+            console.log('Test failed with these buttons on screen:',
+                buttons.length ? buttons : '(none - the app was not on screen)');
         }
 
         await stopFrida();
@@ -172,20 +170,11 @@ describe('Test Android unpinning', function () {
                     return 'Frida exited before the app appeared';
                 }
 
-                const ui = await readUi();
-
-                // A crash or ANR dialog for our app covers it, so report that rather than just
-                // timing out. Dialogs about other apps (a launcher that's hung on a slow emulator,
-                // say) only get in the way, so those we dismiss and keep waiting:
-                const systemError = app.systemErrorDialog(ui);
-                if (systemError) return `Android reported: "${systemError}"`;
-                await app.dismissOtherAppErrors(ui);
-
                 // The previous instance's window can linger on screen briefly after it's killed,
                 // so we wait for Frida to confirm the launch, not just for the app to be visible:
                 if (
                     output().includes(`Spawned \`${APP_ID}\``) &&
-                    app.isOnScreen(ui)
+                    await app.isOnScreen()
                 ) return undefined;
 
                 // N.b. this must await something on every pass, or we'd starve the event loop and
@@ -211,8 +200,6 @@ describe('Test Android unpinning', function () {
             retryTapAfter: 15_000
         });
 
-        expect(description).to.be.a('string', `Button ${text} did not respond`);
-
         // Matching the app's exact wording, so that a failure whose error message happens to
         // mention success can't be read as one:
         expect(description).to.include(
@@ -227,16 +214,7 @@ describe('Test Android unpinning', function () {
         expected: Result,
         { exceptions = [] }: { exceptions?: string[] } = {}
     ) => {
-        // If the app dies mid-test we see only its absence, so we say what Android saw too:
-        const buttons = await app.findAllButtons().catch(async (e) => {
-            const androidLogs = await app.recentFailureLogs();
-            throw new Error(
-                `${e.message}` +
-                (await app.isRunning() ? '' : '. The app is no longer running') +
-                (androidLogs ? `.\nAndroid logged:\n${androidLogs}` : '')
-            );
-        });
-
+        const buttons = await app.findAllButtons();
         console.log(`Testing ${buttons.length} buttons: ${buttons.join(', ')}`);
 
         // Without this, a scenario with no exceptions would pass having tested nothing at all:

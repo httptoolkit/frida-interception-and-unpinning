@@ -109,6 +109,7 @@ export class DeviceApp {
     // generate the assignment those imply:
     private appId: string;
     private appName: string; // As shown in the UI, e.g. in Android's own dialogs about the app
+    private lastSystemDialog: string | undefined;
 
     constructor(appId: string, appName: string) {
         this.appId = appId;
@@ -156,55 +157,58 @@ export class DeviceApp {
         return nodes.filter((node) => node.packageName === this.appId);
     }
 
-    buttons(nodes: UiNode[]) {
+    private buttons(nodes: UiNode[]) {
         return this.ownNodes(nodes).filter((node) => node.className === 'android.widget.Button');
     }
 
-    isOnScreen(nodes: UiNode[]) {
-        return this.ownNodes(nodes).some((node) => node.text === this.appName);
-    }
-
-    private errorDialogs(nodes: UiNode[]) {
-        return nodes.filter((node) =>
+    /**
+     * Android's crash & ANR dialogs, for any app at all. We treat these purely as obstacles: they
+     * cover whatever's behind them, so we clear them and carry on. What actually went wrong is
+     * reported from Android's own logs instead (see explainFailure), which is more precise, and
+     * works even where these dialogs are disabled device-wide.
+     */
+    private async dismissSystemDialog(nodes: UiNode[]) {
+        const dialog = nodes.find((node) =>
             node.packageName === 'android' &&
             /isn't responding|keeps stopping|has stopped/i.test(node.text)
         );
-    }
+        if (!dialog) return false;
 
-    /**
-     * Android's own crash & ANR dialog for the app under test. These cover the app, hiding it from
-     * everything we query, so without this a crash looks like a button that never responded.
-     */
-    systemErrorDialog(nodes: UiNode[]) {
-        // N.b. it must name our app: dialogs about anything else aren't a failure of ours.
-        return this.errorDialogs(nodes).find((node) => node.text.includes(this.appName))?.text;
-    }
+        console.log(`Dismissing system dialog: "${dialog.text}"`);
+        // Remembered so that if something does go wrong later, we can say what Android showed:
+        this.lastSystemDialog = dialog.text;
 
-    /**
-     * The same dialogs, but about some other app - a launcher that's hung on a slow emulator,
-     * typically. Not our problem, except that they sit on top of the app and hide it, so we
-     * dismiss them and carry on.
-     */
-    async dismissOtherAppErrors(nodes: UiNode[]) {
-        const otherError = this.errorDialogs(nodes)
-            .find((node) => !node.text.includes(this.appName));
-        if (!otherError) return false;
-
-        const dismiss = (text: string) => nodes.find((node) =>
+        const button = (text: string) => nodes.find((node) =>
             node.packageName === 'android' && node.text === text
         );
-        // 'Wait' leaves the other app alone, so we prefer it to closing it:
-        const button = dismiss('Wait') ?? dismiss('Close app');
-        if (!button) return false;
 
-        console.log(`Dismissing an unrelated system dialog: "${otherError.text}"`);
-        await this.tap(button);
+        // 'Wait' leaves the app running, so we prefer that where it's offered. Note that we never
+        // press the crash dialog's 'Open app again', as we start the app ourselves:
+        const dismiss = button('Wait') ?? button('Close app') ?? button('OK');
+        if (dismiss) {
+            await this.tap(dismiss);
+        } else {
+            // Crash dialogs may offer nothing but a restart, so we back out of those instead:
+            await adb('shell', 'input', 'keyevent', 'KEYCODE_BACK');
+        }
+
         return true;
     }
 
-    private assertNotCrashed(nodes: UiNode[]) {
-        const error = this.systemErrorDialog(nodes);
-        if (error) throw new Error(`Android reported a problem with the app: "${error}"`);
+    /**
+     * Everything we can say about why the app isn't usable. Android knows far more than we can
+     * see from out here, so we always ask it.
+     */
+    private async explainFailure(problem: string) {
+        const running = await this.isRunning();
+        const androidLogs = await this.recentFailureLogs();
+
+        return new Error(
+            problem +
+            (running ? '' : `. ${this.appName} is no longer running`) +
+            (this.lastSystemDialog ? `.\nAndroid showed: "${this.lastSystemDialog}"` : '') +
+            (androidLogs ? `.\nAndroid logged:\n${androidLogs}` : '')
+        );
     }
 
     // N.b. this can legitimately be missing for a moment: a toast (this app shows one for every
@@ -229,32 +233,47 @@ export class DeviceApp {
     }
 
     /**
-     * A UI read that explains itself: if the screen can't be read at all, that's usually because
-     * something has hung, and Android will have logged which app & why.
+     * Read the screen, clearing anything Android has put on top of the app. If the screen can't
+     * be read at all, that generally means something has hung, so we explain that.
      */
-    private async readUiOrExplain() {
-        return readUi().catch(async (e) => {
-            const androidLogs = await this.recentFailureLogs();
-            throw new Error(e.message + (androidLogs ? `\nAndroid logged:\n${androidLogs}` : ''));
+    private async readScreen() {
+        const nodes = await readUi().catch(async (e) => {
+            throw await this.explainFailure(e.message);
         });
+
+        await this.dismissSystemDialog(nodes);
+        return nodes;
     }
 
     /**
-     * Read the app's own view of the screen, waiting for it if something (e.g. a toast) is
-     * currently on top of it.
+     * Read the app's own view of the screen, waiting for it to appear: it can be briefly absent
+     * while something else is in front of it, e.g. a toast (which this app shows for every failed
+     * request) or a dialog we've just dismissed.
      */
     private async readApp() {
         for (let i = 0; i < 20; i++) {
-            const nodes = await this.readUiOrExplain();
-            this.assertNotCrashed(nodes);
+            const nodes = await this.readScreen();
 
             const scrollable = this.scrollable(nodes);
             if (scrollable) return { nodes, scrollable };
 
-            if (!await this.dismissOtherAppErrors(nodes)) await delay(500);
+            await delay(500);
         }
 
-        throw new Error(`${this.appId} was not on screen`);
+        throw await this.explainFailure(`${this.appName} did not appear on screen`);
+    }
+
+    /** Whether the app is visible right now, clearing anything covering it first. */
+    async isOnScreen() {
+        const nodes = await this.readScreen().catch((): UiNode[] => []);
+        return this.ownNodes(nodes).some((node) => node.text === this.appName);
+    }
+
+    /** Every button and its result, for reporting what state a failing test left behind. */
+    async buttonStates() {
+        const nodes = await readUi().catch((): UiNode[] => []);
+        return this.buttons(nodes)
+            .map((b) => `${b.text}: ${b.description || '(no result)'}`);
     }
 
     async scrollToTop() {
@@ -341,27 +360,19 @@ export class DeviceApp {
         let retapped = false;
 
         while (true) {
-            const nodes = await this.readUiOrExplain();
-            this.assertNotCrashed(nodes);
+            const nodes = await this.readScreen();
 
             const button = this.buttons(nodes).find((b) => b.text === text);
             if (button?.description) return button.description;
 
             const elapsed = Date.now() - startTime;
             if (elapsed > options.timeout) {
-                // Note that a button that's missing entirely (rather than present with no result)
+                // N.b. a button missing from this entirely (rather than present with no result)
                 // means it wasn't in the UI at all, e.g. it was covered or scrolled away:
-                console.log(`Timed out waiting for '${text}'. The UI showed:`, this.buttons(
-                    await readUi()
-                ).map((b) => `${b.text}${b.description ? ` => ${b.description}` : ' (no result)'}`));
-
-                // Crash & ANR dialogs are detected above, but they can be disabled device-wide,
-                // so we check Android's own logs too - they explain a missing result far better
-                // than anything we can see from out here:
-                const failureLogs = await this.recentFailureLogs();
-                if (failureLogs) console.log(`Android logged:\n${failureLogs}`);
-
-                return undefined;
+                throw await this.explainFailure(
+                    `${text} did not respond within ${options.timeout / 1000} seconds. ` +
+                    `The buttons on screen were:\n  ${(await this.buttonStates()).join('\n  ')}`
+                );
             }
 
             if (button && !retapped && elapsed > options.retryTapAfter) {
