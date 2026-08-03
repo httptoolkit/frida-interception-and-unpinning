@@ -1,0 +1,369 @@
+name: iOS gadget spike
+
+# A spike, not a test suite: this answers one question, which is whether our scripts can intercept
+# an app in the iOS simulator via Frida's gadget, with no jailbreak and no app changes. If they
+# can, automated iOS testing is worth building on top of it. If they can't, nothing else matters.
+#
+# It runs a real proxy and checks that the app's HTTPS traffic reaches it, so this covers the whole
+# chain: injection, hooking, connection redirection and certificate trust.
+#
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios-gadget-spike.yml'
+      - 'ios/**'
+      - 'config.js'
+      - 'native-*.js'
+
+env:
+  FRIDA_VERSION: 17.16.4
+  FRIDA_TOOLS_VERSION: 14.10.4 # Matched to the pin in ci.yml, for the ObjC bridge below
+  APP_NAME: SpikeApp
+  BUNDLE_ID: com.httptoolkit.gadget-spike
+
+jobs:
+  gadget-spike:
+    name: Load our scripts via Frida gadget in the simulator
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Boot a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          for runtime, entries in sorted(devices.items()):
+              for device in entries:
+                  if 'iPhone' in device['name']:
+                      print(device['udid'], device['name'], runtime, file=sys.stderr)
+                      print(device['udid'])
+                      sys.exit(0)
+          sys.exit('No iPhone simulator available')
+          ")
+          echo "UDID=$UDID" >> $GITHUB_ENV
+
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID"
+
+      - name: Build an app to inject into
+        run: |
+          # Deliberately a purpose-built app rather than the iOS pinning demo. The demo's own
+          # dependencies (AFNetworking, TrustKit) don't currently build against the runner's SDK,
+          # and this spike is about whether our scripts work under the gadget, not about the
+          # demo's build health. Testing the demo's pinning cases needs UI automation we don't
+          # have on iOS yet in any case - see IMPROVEMENTS.md.
+          APP="$RUNNER_TEMP/$APP_NAME.app"
+          mkdir -p "$APP"
+
+          # It makes a repeated HTTPS request, so we can check that real app traffic (not just
+          # traffic our injected script generates) ends up intercepted:
+          cat > "$RUNNER_TEMP/main.swift" <<'SWIFT'
+          import UIKit
+
+          class AppDelegate: NSObject, UIApplicationDelegate {
+              var window: UIWindow?
+
+              func application(
+                  _ application: UIApplication,
+                  didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?
+              ) -> Bool {
+                  window = UIWindow(frame: UIScreen.main.bounds)
+                  let controller = UIViewController()
+                  controller.view.backgroundColor = .white
+                  window?.rootViewController = controller
+                  window?.makeKeyAndVisible()
+
+                  NSLog("SPIKE-APP: launched")
+
+                  // Repeated, so that the gadget's exact setup timing doesn't matter:
+                  Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+                      let url = URL(string: "https://example.com/from-the-app")!
+                      URLSession.shared.dataTask(with: url) { _, response, error in
+                          if let error = error {
+                              NSLog("SPIKE-APP: request failed: \(error.localizedDescription)")
+                          } else if let http = response as? HTTPURLResponse {
+                              NSLog("SPIKE-APP: request got status \(http.statusCode)")
+                          }
+                      }.resume()
+                  }
+
+                  return true
+              }
+          }
+
+          UIApplicationMain(
+              CommandLine.argc,
+              CommandLine.unsafeArgv,
+              nil,
+              NSStringFromClass(AppDelegate.self)
+          )
+          SWIFT
+
+          cat > "$APP/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>$APP_NAME</string>
+            <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+            <key>CFBundleName</key><string>$APP_NAME</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
+            <key>DTPlatformName</key><string>iphonesimulator</string>
+            <key>MinimumOSVersion</key><string>15.0</string>
+            <key>UIDeviceFamily</key><array><integer>1</integer></array>
+            <key>UILaunchScreen</key><dict/>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint "$APP/Info.plist"
+
+          # For the simulator we booted, which runs the runner's own architecture:
+          xcrun --sdk iphonesimulator swiftc \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -target "$(uname -m)-apple-ios15.0-simulator" \
+            -swift-version 5 \
+            -o "$APP/$APP_NAME" \
+            "$RUNNER_TEMP/main.swift"
+
+          # Ad-hoc signing, which is all the simulator asks for:
+          codesign --force --sign - "$APP"
+
+          file "$APP/$APP_NAME"
+          echo "APP_PATH=$APP" >> $GITHUB_ENV
+
+      - name: Install the app
+        run: |
+          xcrun simctl install "$UDID" "$APP_PATH"
+          # Confirms the simulator accepted the bundle, rather than finding out at launch:
+          xcrun simctl listapps "$UDID" | grep -q "$BUNDLE_ID"
+
+      - name: Download the Frida gadget for the simulator
+        run: |
+          # N.b. the simulator build specifically - the normal iOS gadget is built for devices,
+          # and won't load here:
+          curl -sSfL -o gadget.dylib.xz \
+            "https://github.com/frida/frida/releases/download/$FRIDA_VERSION/frida-gadget-$FRIDA_VERSION-ios-simulator-universal.dylib.xz"
+          unxz gadget.dylib.xz
+          mv gadget.dylib "$RUNNER_TEMP/frida-gadget.dylib"
+          file "$RUNNER_TEMP/frida-gadget.dylib"
+
+      - name: Start a proxy to intercept through
+        run: |
+          # A real proxy, so we can prove interception end to end rather than just that our hooks
+          # were installed. It provides the CA that config.js is configured to trust, below:
+          mkdir -p "$RUNNER_TEMP/proxy" && cd "$RUNNER_TEMP/proxy"
+          npm init -y > /dev/null
+          npm install mockttp --silent
+
+          cat > proxy.mjs <<'EOF'
+          import * as mockttp from 'mockttp';
+          import * as fs from 'fs/promises';
+
+          const ca = await mockttp.generateCACertificate();
+          await fs.writeFile(process.env.RUNNER_TEMP + '/ca.pem', ca.cert);
+
+          const server = mockttp.getLocal({
+              https: ca,
+              socks: true,
+              passthrough: ['unknown-protocol']
+          });
+
+          await server.forAnyRequest().thenCallback((req) => {
+              console.log(`PROXY-SAW: ${req.url}`);
+              return { statusCode: 200, body: 'Mocked by the spike' };
+          });
+          await server.on('tls-client-error', (e) =>
+              console.log(`PROXY-TLS-REJECTED: ${e.tlsMetadata.sniHostname}`));
+
+          await server.start(8000);
+          console.log(`PROXY-READY on port ${server.port}`);
+          EOF
+
+          node proxy.mjs > "$RUNNER_TEMP/proxy.log" 2>&1 &
+          for _ in $(seq 30); do
+            grep -q PROXY-READY "$RUNNER_TEMP/proxy.log" && break
+            sleep 1
+          done
+
+          cat "$RUNNER_TEMP/proxy.log"
+          # Otherwise the app's failure to connect later would look like a hooking problem:
+          grep -q PROXY-READY "$RUNNER_TEMP/proxy.log"
+
+      - name: Assemble the scripts to inject
+        run: |
+          # Only for its copy of the ObjC bridge - see below:
+          python3 -m pip install --quiet --break-system-packages "frida-tools==$FRIDA_TOOLS_VERSION"
+
+          python3 - <<'EOF'
+          import os, re, pathlib, frida_tools
+
+          # The proxy's own CA, so that trusting it is a real test of our TLS hooks:
+          cert = open(os.environ['RUNNER_TEMP'] + '/ca.pem').read().strip()
+          config = open('config.js').read()
+          config = re.sub(r'(?<=const CERT_PEM = `)[^`]+(?=`)', lambda _: cert, config, flags=re.S)
+          config = re.sub(r"(?<=const PROXY_HOST = ')[^']+(?=')", '127.0.0.1', config)
+          config = re.sub(r'(?<=const PROXY_PORT = )\d+(?=;)', '8000', config)
+
+          # Frida 17 unbundled the language bridges. The CLI hands them to the script on demand
+          # when it touches ObjC, but the gadget has no host to ask, so a script that uses ObjC
+          # (as ios-disable-detection.js does) has to bring its own or fail with a ReferenceError.
+          # This is the same prebuilt bundle that `frida -l` would have supplied:
+          bridge_path = pathlib.Path(frida_tools.__file__).parent / 'bridges' / 'objc.js'
+          objc_bridge = (
+              '(() => {\n' +
+              bridge_path.read_text() +
+              '\nglobalThis.ObjC = bridge;\n' +
+              '})();'
+          )
+
+          # Once the hooks are in, make a request through the app's own networking stack. That
+          # proves the whole chain (injection, hooking, redirection, TLS) without needing to
+          # drive the app's UI, which is a separate problem for the tests proper:
+          send_a_request = '''
+          console.log("SPIKE-MARKER: all scripts loaded");
+
+          setTimeout(() => {
+              if (!ObjC.available) return console.log("SPIKE-REQUEST: no ObjC runtime");
+
+              try {
+                  const url = ObjC.classes.NSURL.URLWithString_("https://example.com/spike");
+
+                  // Kept globally, so it isn't collected before the request completes:
+                  globalThis.spikeHandler = new ObjC.Block({
+                      retType: "void",
+                      argTypes: ["object", "object", "object"],
+                      implementation: (data, response, error) => {
+                          try {
+                              if (error) console.log(`SPIKE-REQUEST: failed: ${error.localizedDescription()}`);
+                              else console.log(`SPIKE-REQUEST: got status ${response.statusCode()}`);
+                          } catch (e) {
+                              console.log(`SPIKE-REQUEST: completed, but could not read it: ${e}`);
+                          }
+                      }
+                  });
+
+                  ObjC.classes.NSURLSession.sharedSession()
+                      .dataTaskWithURL_completionHandler_(url, globalThis.spikeHandler)
+                      .resume();
+                  console.log("SPIKE-REQUEST: sent");
+              } catch (e) {
+                  console.log(`SPIKE-REQUEST: could not send: ${e}`);
+              }
+          }, 5000);
+          '''
+
+          # The gadget loads a single script, so we combine them exactly as the README's iOS
+          # command does, plus the marker & request above:
+          scripts = [
+              objc_bridge,
+              config,
+              open('ios/ios-connect-hook.js').read(),
+              open('ios/ios-disable-detection.js').read(),
+              open('native-tls-hook.js').read(),
+              open('native-connect-hook.js').read(),
+              send_a_request
+          ]
+
+          with open(os.environ['RUNNER_TEMP'] + '/spike.js', 'w') as output:
+              output.write('\n'.join(scripts))
+          EOF
+
+          # Script mode, so the gadget runs our script at startup instead of pausing the app to
+          # wait for a client to attach:
+          cat > "$RUNNER_TEMP/frida-gadget.config" <<EOF
+          {
+            "interaction": {
+              "type": "script",
+              "path": "$RUNNER_TEMP/spike.js",
+              "on_change": "ignore"
+            }
+          }
+          EOF
+
+          wc -l "$RUNNER_TEMP/spike.js"
+
+      - name: Launch the app with the gadget injected
+        run: |
+          # Capture the simulator's log too, as a fallback in case the gadget's output doesn't
+          # reach the app's stdout:
+          xcrun simctl spawn "$UDID" log stream --level debug \
+            --predicate "processImagePath CONTAINS \"$APP_NAME\"" > simulator.log 2>&1 &
+          LOG_PID=$!
+
+          # DYLD_INSERT_LIBRARIES via SIMCTL_CHILD_ injects into the app with no modification to
+          # it at all - no repackaging, no re-signing:
+          SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/frida-gadget.dylib" \
+            xcrun simctl launch --console-pty --terminate-running-process \
+            "$UDID" "$BUNDLE_ID" > launch.log 2>&1 &
+          LAUNCH_PID=$!
+
+          # The app doesn't exit by itself, so we give it time to start, hook & make a few
+          # requests (one every 10s), then stop watching:
+          sleep 60
+          kill $LAUNCH_PID $LOG_PID 2>/dev/null || true
+
+          echo "=== app process still running?"
+          pgrep -fl "$APP_NAME" || echo "(no - the app is not running)"
+
+      - name: Report what happened
+        run: |
+          echo "=== launch output:"
+          cat launch.log || true
+          echo
+          echo "=== simulator log:"
+          cat simulator.log || true
+          echo
+          echo "=== proxy log:"
+          cat "$RUNNER_TEMP/proxy.log" || true
+          echo
+          echo "=== crash reports, if any:"
+          find ~/Library/Logs/DiagnosticReports -name "*$APP_NAME*" -newermt '-10 minutes' \
+            -exec echo '--- {}' \; -exec head -40 {} \; 2>/dev/null || echo "(none)"
+
+      - name: Check the result
+        run: |
+          OUTPUT="$(cat launch.log simulator.log "$RUNNER_TEMP/proxy.log" 2>/dev/null || true)"
+
+          check() {
+            if grep -qF "$1" <<< "$OUTPUT"; then
+              echo "PASS: $2"
+            else
+              echo "FAIL: $2 (expected to find '$1')"
+              FAILED=1
+            fi
+          }
+
+          # The marker proves every script ran to completion; the rest prove they did something.
+          # N.b. these match the scripts' success messages specifically - "libboringssl.dylib"
+          # alone would also match the message logged when hooking it fails:
+          check "SPIKE-APP: launched" "the app started with the gadget injected"
+          check "SPIKE-MARKER: all scripts loaded" "our scripts ran under the gadget"
+          check "== Redirecting all TCP connections to 127.0.0.1:8000 ==" \
+            "native-connect-hook hooked, with our config applied"
+          check "== Hooked native TLS lib libboringssl.dylib ==" "native-tls-hook hooked iOS's TLS"
+
+          # The real question: does traffic actually end up intercepted? Redirection and
+          # certificate trust both have to work for the proxy to see these, and a
+          # PROXY-TLS-REJECTED line distinguishes the two if it doesn't.
+          #
+          # The app's own request is the case that matters; the script-generated one also
+          # confirms the bundled ObjC bridge works, since it goes through it:
+          check "PROXY-SAW: https://example.com/from-the-app" "the app's own HTTPS request was intercepted"
+          check "SPIKE-APP: request got status 200" "the app got the proxy's response back"
+          check "PROXY-SAW: https://example.com/spike" "our script's HTTPS request was intercepted"
+          check "SPIKE-REQUEST: got status 200" "our script got the proxy's response back"
+
+          if ! pgrep -f "$APP_NAME" > /dev/null; then
+            echo "FAIL: the app is not running - it may have crashed (see the report above)"
+            FAILED=1
+          else
+            echo "PASS: the app survived injection"
+          fi
+
+          exit ${FAILED:-0}
