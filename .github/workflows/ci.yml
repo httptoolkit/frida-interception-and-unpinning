@@ -8,7 +8,7 @@ jobs:
       image: httptoolkit/act-build-base:v3.0.0
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build a single-file Android script
         run: |
@@ -24,7 +24,7 @@ jobs:
             ./android/android-disable-root-detection.js \
             > ./build/android-frida-interception-script.js
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-frida-interception-script.js
           path: ./build/android-frida-interception-script.js
@@ -56,15 +56,15 @@ jobs:
       matrix:
         api-level: [26, 28, 30, 33, 35]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -84,7 +84,7 @@ jobs:
 
       # Cache the emulator AVD:
       - name: AVD cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
