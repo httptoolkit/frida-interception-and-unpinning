@@ -346,12 +346,15 @@ jobs:
           ps -p "$(awk '{print $2}' "$RUNNER_TEMP/baseline.log")"
           xcrun simctl terminate "$UDID" "$BUNDLE_ID"
 
-      - name: Find a gadget version the app survives
+      - name: Find a gadget version that can run a script here
         run: |
-          # Gadget 17.16.4 segfaults during its own initialisation here: listen mode with no
-          # script of ours loaded crashes identically to a full run, and 16.7.19 doesn't crash at
-          # all. So rather than pinning a version, walk back from the newest until one survives.
-          # That gets us running, and shows where this broke.
+          # Recent gadgets segfault on this simulator: 17.16.4 dies during its own initialisation
+          # with nothing of ours loaded, and 17.16.0 survives that but dies as soon as it runs a
+          # script. So rather than pinning a version, walk back from the newest until one works,
+          # which gets us running and shows where this broke.
+          #
+          # N.b. tested in script mode with a trivial script, not listen mode: script mode is what
+          # we actually need, and 17.16.0 proves surviving without one means nothing.
           BUNDLE_DIR="$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" app)"
           echo "BUNDLE_DIR=$BUNDLE_DIR" >> $GITHUB_ENV
           echo "Installed at: $BUNDLE_DIR"
@@ -361,9 +364,15 @@ jobs:
           mkdir -p "$BUNDLE_DIR/Frameworks"
           cp "$RUNNER_TEMP/spike.js" "$BUNDLE_DIR/Frameworks/spike.js"
 
-          # Listen mode with on_load resume: the gadget initialises, but runs nothing of ours and
-          # doesn't hold the app waiting for a client, so this tests the gadget by itself.
-          printf '%s\n' '{ "interaction": { "type": "listen", "on_load": "resume" } }' \
+          cat > "$BUNDLE_DIR/Frameworks/trivial.js" <<EOF
+          console.log("SPIKE-TRIVIAL: script mode works");
+          const file = new File("$DATA_DIR/trivial-ran.txt", "w");
+          file.write("ran\n");
+          file.close();
+          EOF
+
+          printf '%s\n' \
+            "{ \"interaction\": { \"type\": \"script\", \"path\": \"$BUNDLE_DIR/Frameworks/trivial.js\", \"on_change\": \"ignore\" } }" \
             > "$BUNDLE_DIR/Frameworks/FridaGadget.config"
 
           WORKING=""
@@ -384,6 +393,7 @@ jobs:
             codesign --force --sign - "$BUNDLE_DIR" # The bundle's contents just changed
 
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
+            rm -f "$DATA_DIR/trivial-ran.txt" # Otherwise a previous version's marker counts
 
             if ! SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$BUNDLE_DIR/Frameworks/FridaGadget.dylib" \
               xcrun simctl launch "$UDID" "$BUNDLE_ID" > "$RUNNER_TEMP/attempt.log" 2>&1
@@ -397,14 +407,20 @@ jobs:
             PID="$(awk '{print $2}' "$RUNNER_TEMP/attempt.log")"
             sleep 10
 
-            if ps -p "$PID" > /dev/null 2>&1; then
-              echo "  the app survived (pid $PID)"
-              WORKING="$VERSION"
-              xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
-              break
+            if ! ps -p "$PID" > /dev/null 2>&1; then
+              echo "  the app crashed (pid $PID)"
+              continue
             fi
 
-            echo "  the app crashed (pid $PID)"
+            if [ ! -f "$DATA_DIR/trivial-ran.txt" ]; then
+              echo "  the app survived, but the gadget never ran the script (pid $PID)"
+              continue
+            fi
+
+            echo "  the app survived & ran our script (pid $PID)"
+            WORKING="$VERSION"
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
+            break
           done
 
           if [ -z "$WORKING" ]; then
@@ -417,29 +433,12 @@ jobs:
           echo "Using Frida $WORKING"
           echo "GADGET_VERSION=$WORKING" >> $GITHUB_ENV
 
-      - name: Check script mode works, and whether its output reaches the log
+      - name: Check whether the gadget's output reaches the simulator log
         run: |
-          # Two separate questions: will the gadget run a script of ours at all, and does its
-          # console output reach the simulator log? The second decides how much the log-based
-          # checks below are worth, so the marker file is the signal that can't be lost.
-          cat > "$BUNDLE_DIR/Frameworks/trivial.js" <<EOF
-          console.log("SPIKE-TRIVIAL: script mode works");
-
-          try {
-              const file = new File("$DATA_DIR/trivial-ran.txt", "w");
-              file.write("ran\n");
-              file.close();
-              console.log("SPIKE-TRIVIAL: wrote the marker file");
-          } catch (e) {
-              console.log(\`SPIKE-TRIVIAL: could not write the marker file: \${e}\`);
-          }
-          EOF
-
-          printf '%s\n' \
-            "{ \"interaction\": { \"type\": \"script\", \"path\": \"$BUNDLE_DIR/Frameworks/trivial.js\", \"on_change\": \"ignore\" } }" \
-            > "$BUNDLE_DIR/Frameworks/FridaGadget.config"
-          codesign --force --sign - "$BUNDLE_DIR"
-
+          # The search above leaves the working gadget & the trivial script in place, and has
+          # already proved script mode runs, so this answers only the remaining question: does the
+          # gadget's console output show up in the log? That decides how much the log-based checks
+          # below are worth, and so whether our scripts need to report on themselves.
           rm -f "$DATA_DIR/trivial-ran.txt"
 
           xcrun simctl spawn "$UDID" log stream --level debug \
@@ -463,10 +462,6 @@ jobs:
             echo "=> the gadget's console output does NOT reach the simulator log, so only the" \
                  "marker file & proxy evidence mean anything below"
           fi
-
-          # Fatal, because nothing else below can work without it:
-          test -f "$DATA_DIR/trivial-ran.txt"
-          echo "=> the gadget ran our script"
 
       - name: Launch the app with the gadget injected
         run: |
