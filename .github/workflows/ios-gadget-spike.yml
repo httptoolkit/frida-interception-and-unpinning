@@ -18,6 +18,7 @@ on:
 
 env:
   FRIDA_VERSION: 17.16.4
+  FRIDA_OLD_VERSION: 16.7.19 # Only to tell version-specific breakage from the rest
   FRIDA_TOOLS_VERSION: 14.10.4 # Matched to the pin in ci.yml, for the ObjC bridge below
   APP_NAME: SpikeApp
   BUNDLE_ID: com.httptoolkit.gadget-spike
@@ -146,12 +147,18 @@ jobs:
       - name: Download the Frida gadget for the simulator
         run: |
           # N.b. the simulator build specifically - the normal iOS gadget is built for devices,
-          # and won't load here:
-          curl -sSfL -o gadget.dylib.xz \
-            "https://github.com/frida/frida/releases/download/$FRIDA_VERSION/frida-gadget-$FRIDA_VERSION-ios-simulator-universal.dylib.xz"
-          unxz gadget.dylib.xz
-          mv gadget.dylib "$RUNNER_TEMP/frida-gadget.dylib"
-          file "$RUNNER_TEMP/frida-gadget.dylib"
+          # and won't load here. Two versions, so that a crash in the gadget itself can be told
+          # apart from one specific to the current release:
+          fetch() {
+            curl -sSfL -o "gadget-$1.dylib.xz" \
+              "https://github.com/frida/frida/releases/download/$1/frida-gadget-$1-ios-simulator-universal.dylib.xz"
+            unxz "gadget-$1.dylib.xz"
+            mv "gadget-$1.dylib" "$2"
+            file "$2"
+          }
+
+          fetch "$FRIDA_VERSION" "$RUNNER_TEMP/frida-gadget.dylib"
+          fetch "$FRIDA_OLD_VERSION" "$RUNNER_TEMP/frida-gadget-old.dylib"
 
       - name: Start a proxy to intercept through
         run: |
@@ -297,6 +304,96 @@ jobs:
           pgrep -fl "$APP_NAME"
           xcrun simctl terminate "$UDID" "$BUNDLE_ID"
 
+      - name: Work out which gadget configurations the app survives
+        run: |
+          # The gadget segfaulted inside its own initialisation last run - every frame was in
+          # frida-gadget.dylib and the app's main was never reached - so these launches separate
+          # the remaining possibilities: the gadget itself, this gadget version, script mode,
+          # where the script lives, and our own scripts.
+          #
+          # Whether the app survives is the signal, since unlike log output it can't be lost.
+          BUNDLE_DIR="$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" app)"
+          echo "BUNDLE_DIR=$BUNDLE_DIR" >> $GITHUB_ENV
+          echo "Installed at: $BUNDLE_DIR"
+
+          # Inside the bundle, which is where a gadget would normally be shipped, and is
+          # somewhere the app can definitely read from:
+          mkdir -p "$BUNDLE_DIR/Frameworks"
+          cp "$RUNNER_TEMP/frida-gadget.dylib" "$BUNDLE_DIR/Frameworks/FridaGadget.dylib"
+          cp "$RUNNER_TEMP/frida-gadget-old.dylib" "$BUNDLE_DIR/Frameworks/FridaGadgetOld.dylib"
+          cp "$RUNNER_TEMP/spike.js" "$BUNDLE_DIR/Frameworks/spike.js"
+          echo 'console.log("SPIKE-TRIVIAL: script mode works");' > "$RUNNER_TEMP/trivial.js"
+          cp "$RUNNER_TEMP/trivial.js" "$BUNDLE_DIR/Frameworks/trivial.js"
+
+          # The bundle's contents just changed, so its seal needs redoing:
+          codesign --force --sign - "$BUNDLE_DIR"
+
+          xcrun simctl spawn "$UDID" log stream --level debug \
+            --predicate "processImagePath CONTAINS \"$APP_NAME\"
+              OR eventMessage CONTAINS \"SPIKE-\"" > diagnose.log 2>&1 &
+          LOG_PID=$!
+          sleep 5
+
+          attempt() {
+            local description="$1" dylib="$2" config="$3"
+            local config_path="${dylib%.dylib}.config"
+
+            echo
+            echo "### $description"
+
+            rm -f "$config_path"
+            if [ -n "$config" ]; then printf '%s\n' "$config" > "$config_path"; fi
+
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
+
+            if SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$dylib" \
+              xcrun simctl launch "$UDID" "$BUNDLE_ID" > "$RUNNER_TEMP/attempt.log" 2>&1
+            then
+              echo "  launch: accepted ($(cat "$RUNNER_TEMP/attempt.log"))"
+            else
+              echo "  launch: REFUSED ($(cat "$RUNNER_TEMP/attempt.log"))"
+              return
+            fi
+
+            sleep 10
+            if pgrep -f "$APP_NAME" > /dev/null; then
+              echo "  result: the app is still running"
+            else
+              echo "  result: the app died"
+            fi
+
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" > /dev/null 2>&1 || true
+          }
+
+          # Listen mode with on_load resume: the gadget sets itself up, but runs nothing of ours
+          # and doesn't hold the app at startup waiting for a client to attach.
+          LISTEN='{ "interaction": { "type": "listen", "on_load": "resume" } }'
+          script_config() {
+            printf '{ "interaction": { "type": "script", "path": "%s", "on_change": "ignore" } }' "$1"
+          }
+
+          attempt "Gadget $FRIDA_VERSION alone, no script of ours" \
+            "$BUNDLE_DIR/Frameworks/FridaGadget.dylib" "$LISTEN"
+
+          attempt "Gadget $FRIDA_OLD_VERSION alone, no script of ours" \
+            "$BUNDLE_DIR/Frameworks/FridaGadgetOld.dylib" "$LISTEN"
+
+          attempt "Trivial script, from inside the app bundle" \
+            "$BUNDLE_DIR/Frameworks/FridaGadget.dylib" \
+            "$(script_config "$BUNDLE_DIR/Frameworks/trivial.js")"
+
+          attempt "Trivial script, from outside the bundle" \
+            "$RUNNER_TEMP/frida-gadget.dylib" "$(script_config "$RUNNER_TEMP/trivial.js")"
+
+          attempt "Our full script" \
+            "$BUNDLE_DIR/Frameworks/FridaGadget.dylib" \
+            "$(script_config "$BUNDLE_DIR/Frameworks/spike.js")"
+
+          kill $LOG_PID 2>/dev/null || true
+          echo
+          echo "=== log output during the attempts:"
+          cat diagnose.log
+
       - name: Launch the app with the gadget injected
         run: |
           # Started before the app & given time to attach, since our scripts log within
@@ -315,9 +412,15 @@ jobs:
           #
           # N.b. run in the foreground: simctl launch returns as soon as the app is spawned, and
           # its exit status is the only direct evidence that the launch was accepted at all.
+          # Both the gadget & our script from inside the app bundle, which is how a gadget would
+          # normally be shipped, and rules out the app being unable to read them:
+          printf '%s\n' \
+            "{ \"interaction\": { \"type\": \"script\", \"path\": \"$BUNDLE_DIR/Frameworks/spike.js\", \"on_change\": \"ignore\" } }" \
+            > "$BUNDLE_DIR/Frameworks/FridaGadget.config"
+
           # N.b. not piped to tee, as the default shell doesn't set pipefail, which would hide a
           # failure here behind tee's exit status:
-          SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/frida-gadget.dylib" \
+          SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$BUNDLE_DIR/Frameworks/FridaGadget.dylib" \
             xcrun simctl launch --terminate-running-process \
             "$UDID" "$BUNDLE_ID" > launch.log 2>&1 || {
               echo "simctl launch failed:"
