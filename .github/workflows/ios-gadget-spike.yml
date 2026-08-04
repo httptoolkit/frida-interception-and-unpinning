@@ -288,30 +288,56 @@ jobs:
 
           wc -l "$RUNNER_TEMP/spike.js"
 
+      - name: Check the app runs without the gadget
+        run: |
+          # Otherwise a broken app and broken injection are indistinguishable, since both show up
+          # as nothing at all in the logs:
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 5
+          pgrep -fl "$APP_NAME"
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+
       - name: Launch the app with the gadget injected
         run: |
-          # Capture the simulator's log too, as a fallback in case the gadget's output doesn't
-          # reach the app's stdout:
+          # Started before the app & given time to attach, since our scripts log within
+          # milliseconds of the process starting. The predicate also matches our markers by
+          # message, in case the gadget's output reaches the log by some other route:
           xcrun simctl spawn "$UDID" log stream --level debug \
-            --predicate "processImagePath CONTAINS \"$APP_NAME\"" > simulator.log 2>&1 &
+            --predicate "processImagePath CONTAINS \"$APP_NAME\"
+              OR eventMessage CONTAINS \"SPIKE-\"
+              OR eventMessage CONTAINS \"== Hooked\"
+              OR eventMessage CONTAINS \"== Redirecting\"" > simulator.log 2>&1 &
           LOG_PID=$!
+          sleep 5
 
           # DYLD_INSERT_LIBRARIES via SIMCTL_CHILD_ injects into the app with no modification to
-          # it at all - no repackaging, no re-signing:
+          # it at all - no repackaging, no re-signing.
+          #
+          # N.b. run in the foreground: simctl launch returns as soon as the app is spawned, and
+          # its exit status is the only direct evidence that the launch was accepted at all.
+          # N.b. not piped to tee, as the default shell doesn't set pipefail, which would hide a
+          # failure here behind tee's exit status:
           SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/frida-gadget.dylib" \
-            xcrun simctl launch --console-pty --terminate-running-process \
-            "$UDID" "$BUNDLE_ID" > launch.log 2>&1 &
-          LAUNCH_PID=$!
+            xcrun simctl launch --terminate-running-process \
+            "$UDID" "$BUNDLE_ID" > launch.log 2>&1 || {
+              echo "simctl launch failed:"
+              cat launch.log
+              exit 1
+            }
+          cat launch.log
 
-          # The app doesn't exit by itself, so we give it time to start, hook & make a few
-          # requests (one every 10s), then stop watching:
-          sleep 60
-          kill $LAUNCH_PID $LOG_PID 2>/dev/null || true
+          echo "=== app process immediately after launch:"
+          pgrep -fl "$APP_NAME" || echo "(no - it did not survive startup)"
+
+          # The app requests every 10s, so this covers several:
+          sleep 45
+          kill $LOG_PID 2>/dev/null || true
 
           echo "=== app process still running?"
           pgrep -fl "$APP_NAME" || echo "(no - the app is not running)"
 
       - name: Report what happened
+        if: always() # Especially when the launch itself failed
         run: |
           echo "=== launch output:"
           cat launch.log || true
@@ -323,8 +349,46 @@ jobs:
           cat "$RUNNER_TEMP/proxy.log" || true
           echo
           echo "=== crash reports, if any:"
-          find ~/Library/Logs/DiagnosticReports -name "*$APP_NAME*" -newermt '-10 minutes' \
-            -exec echo '--- {}' \; -exec head -40 {} \; 2>/dev/null || echo "(none)"
+          # .ips reports are two JSON documents, and the interesting fields (why it died, and
+          # where) come long after the boilerplate, so we pick them out rather than truncating:
+          python3 - <<'EOF'
+          import glob, json, os, time
+
+          reports = [
+              path for path in
+              sorted(glob.glob(os.path.expanduser('~/Library/Logs/DiagnosticReports/*.ips')))
+              if time.time() - os.path.getmtime(path) < 900
+          ]
+
+          if not reports:
+              print('(none)')
+
+          for path in reports:
+              print(f'--- {os.path.basename(path)}')
+              try:
+                  with open(path) as file:
+                      file.readline() # The metadata header, which we've already got
+                      report = json.loads(file.read())
+              except Exception as error:
+                  print(f'  (could not parse: {error})')
+                  continue
+
+              for key in ('exception', 'termination', 'exitReason', 'asi', 'asiBacktraces'):
+                  if key in report:
+                      print(f'  {key}: {json.dumps(report[key])[:1500]}')
+
+              images = report.get('usedImages', [])
+              threads = report.get('threads', [])
+              faulting = report.get('faultingThread')
+
+              if faulting is not None and faulting < len(threads):
+                  print('  faulting thread:')
+                  for frame in threads[faulting].get('frames', [])[:15]:
+                      index = frame.get('imageIndex', -1)
+                      image = images[index] if 0 <= index < len(images) else {}
+                      name = image.get('name') or image.get('path') or '?'
+                      print(f"    {name} + {frame.get('imageOffset')} {frame.get('symbol', '')}")
+          EOF
 
       - name: Check the result
         run: |
