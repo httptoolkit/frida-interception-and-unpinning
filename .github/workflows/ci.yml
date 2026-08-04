@@ -1,5 +1,10 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    # TEMPORARY: skipped on ios-tests while the iOS spike is being iterated on there. Drop this
+    # before merging, and note it does not apply once that branch has a PR open.
+    branches-ignore: [ios-tests]
+  pull_request:
 jobs:
   build:
     name: Build & test

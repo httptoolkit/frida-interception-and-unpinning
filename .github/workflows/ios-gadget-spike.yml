@@ -21,7 +21,7 @@ env:
   # loaded at all, while 16.7.19 does not. So rather than pinning a version, we walk back from
   # the newest until one survives, which also tells us where it broke.
   GADGET_VERSIONS: >-
-    17.16.4 17.14.0 17.12.0 17.10.0 17.8.0 17.6.0 17.4.0 17.2.0 17.0.0 16.7.19
+    17.16.4 17.16.0 17.15.0 17.14.0 17.12.0 17.10.0 17.8.0 17.6.0 17.4.0 17.2.0 17.0.0 16.7.19
   FRIDA_TOOLS_VERSION: 14.10.4 # Matched to the pin in ci.yml, for the ObjC bridge below
   APP_NAME: SpikeApp
   BUNDLE_ID: com.httptoolkit.gadget-spike
@@ -268,20 +268,56 @@ jobs:
           }, 5000);
           '''
 
+          # The gadget's console output doesn't reach the simulator log at all (established by the
+          # script mode check below), so we tee it to a file in the app's own data container,
+          # which we can read back afterwards. Without this our scripts fail silently:
+          preamble = '''
+          const SPIKE_LOG = "__LOG_PATH__";
+
+          function spikeLog(line) {
+              try {
+                  const file = new File(SPIKE_LOG, "a");
+                  file.write(line + "\\n");
+                  file.close();
+              } catch (e) {}
+          }
+
+          console.log = function () { spikeLog(Array.prototype.join.call(arguments, " ")); };
+          console.warn = console.log;
+          console.error = console.log;
+          console.debug = console.log;
+          '''.replace('__LOG_PATH__', os.environ['DATA_DIR'] + '/gadget.log')
+
           # The gadget loads a single script, so we combine them exactly as the README's iOS
-          # command does, plus the marker & request above:
+          # command does, plus the marker & request above. Each is announced, so a failure can be
+          # placed even if it happens before anything is logged:
           scripts = [
-              objc_bridge,
-              config,
-              open('ios/ios-connect-hook.js').read(),
-              open('ios/ios-disable-detection.js').read(),
-              open('native-tls-hook.js').read(),
-              open('native-connect-hook.js').read(),
-              send_a_request.replace('__MARKER_PATH__', os.environ['DATA_DIR'] + '/scripts-loaded.txt')
+              ('the ObjC bridge', objc_bridge),
+              ('config.js', config),
+              ('ios/ios-connect-hook.js', open('ios/ios-connect-hook.js').read()),
+              ('ios/ios-disable-detection.js', open('ios/ios-disable-detection.js').read()),
+              ('native-tls-hook.js', open('native-tls-hook.js').read()),
+              ('native-connect-hook.js', open('native-connect-hook.js').read()),
+              ('the spike additions',
+                  send_a_request.replace('__MARKER_PATH__',
+                      os.environ['DATA_DIR'] + '/scripts-loaded.txt'))
           ]
 
+          body = '\n'.join(
+              f'spikeLog("SPIKE-STEP: running {name}");\n{source}'
+              for name, source in scripts
+          )
+
+          # N.b. one try block around all of them, not one each: they're written to share a single
+          # top-level scope, and a block per script would hide each script's declarations from the
+          # next. This still reports the error, which the gadget otherwise swallows entirely.
           with open(os.environ['RUNNER_TEMP'] + '/spike.js', 'w') as output:
-              output.write('\n'.join(scripts))
+              output.write(
+                  preamble +
+                  '\ntry {\n' + body + '\n} catch (error) {\n' +
+                  '    spikeLog("SPIKE-FAILED: " + error + "\\n" + (error && error.stack));\n' +
+                  '}\n'
+              )
           EOF
 
           # Script mode, so the gadget runs our script at startup instead of pausing the app to
@@ -450,6 +486,9 @@ jobs:
           #
           # N.b. run in the foreground: simctl launch returns as soon as the app is spawned, and
           # its exit status is the only direct evidence that the launch was accepted at all.
+          # So that what we read back afterwards is definitely from this run:
+          rm -f "$DATA_DIR/gadget.log" "$DATA_DIR/scripts-loaded.txt"
+
           # Both the gadget & our script from inside the app bundle, which is how a gadget would
           # normally be shipped, and rules out the app being unable to read them:
           printf '%s\n' \
@@ -487,6 +526,9 @@ jobs:
           echo
           echo "=== simulator log:"
           cat simulator.log || true
+          echo
+          echo "=== our scripts' own output, from inside the app:"
+          cat "$DATA_DIR/gadget.log" || echo "(nothing - our scripts never ran at all)"
           echo
           echo "=== proxy log:"
           cat "$RUNNER_TEMP/proxy.log" || true
@@ -535,7 +577,10 @@ jobs:
 
       - name: Check the result
         run: |
-          OUTPUT="$(cat launch.log simulator.log "$RUNNER_TEMP/proxy.log" 2>/dev/null || true)"
+          # N.b. includes the gadget log our scripts write themselves: their console output does
+          # not reach the simulator log, so that file is the only place their messages appear.
+          OUTPUT="$(cat launch.log simulator.log "$DATA_DIR/gadget.log" \
+            "$RUNNER_TEMP/proxy.log" 2>/dev/null || true)"
 
           check() {
             if grep -qF "$1" <<< "$OUTPUT"; then
@@ -554,7 +599,8 @@ jobs:
           if [ -f "$DATA_DIR/scripts-loaded.txt" ]; then
             echo "PASS: our scripts ran to completion under the gadget"
           else
-            echo "FAIL: our scripts did not run to completion (no marker file written)"
+            echo "FAIL: our scripts did not run to completion (no marker file written)." \
+                 "Their own output, above, shows which script they got to & why it stopped."
             FAILED=1
           fi
 
