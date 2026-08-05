@@ -268,64 +268,49 @@ jobs:
           }, 5000);
           '''
 
-          # Spike-only diagnostics. native-tls-hook.js could not load libboringssl.dylib at
-          # startup, and its deferred hook never fired either, though the app plainly does use
-          # that library later on. Rather than guessing why, report what Frida actually sees:
+          # Spike-only diagnostics, run at load: the same moment native-tls-hook.js runs, so
+          # what they see is what it saw. The last run established that libboringssl.dylib is
+          # already loaded by then (Process.attachModuleObserver replays loaded modules as it
+          # attaches, and ours reported it before attaching even returned), and that hooking it
+          # by hand still fails with "unable to find export 'sk_num'".
           #
-          #  - two module observers, one retained in a global & one not, since config.js discards
-          #    the handle its own observer returns
-          #  - the modules Frida can see once the app has really made a TLS connection
-          #  - a hook applied by hand at that point, so we learn whether timing is the only
-          #    problem: if the app's later requests are then intercepted, the rest all works
+          # So these answer the two remaining questions: why waitForModule didn't find a module
+          # that was right there, and which of the symbols patchTargetLib needs actually exist.
           diagnostics = '''
           try {
-              globalThis.spikeRetainedObserver = Process.attachModuleObserver({
-                  onAdded(module) {
-                      const name = module.name || module.path || "(unnamed)";
-                      if (name.indexOf("ssl") !== -1) console.log(`SPIKE-OBSERVER (retained): ${name}`);
-                  }
+              const boringssl = Process.getModuleByName("libboringssl.dylib");
+              console.log(`SPIKE-TLS: getModuleByName => ${boringssl.path}`);
+
+              try {
+                  boringssl.ensureInitialized();
+                  console.log("SPIKE-TLS: ensureInitialized() succeeded");
+              } catch (e) {
+                  console.log(`SPIKE-TLS: ensureInitialized() threw: ${e}`);
+              }
+
+              try {
+                  console.log(`SPIKE-TLS: Module.load => ${Module.load("libboringssl.dylib").path}`);
+              } catch (e) {
+                  console.log(`SPIKE-TLS: Module.load threw: ${e}`);
+              }
+
+              ["SSL_get0_peer_certificates", "sk_num", "sk_value",
+                  "CRYPTO_BUFFER_len", "CRYPTO_BUFFER_data",
+                  "SSL_set_custom_verify", "SSL_CTX_set_custom_verify", "SSL_get_psk_identity"
+              ].forEach((name) => {
+                  const found = boringssl.findExportByName(name) ? "exported" : "MISSING";
+                  console.log(`SPIKE-TLS: ${name}: ${found}`);
               });
 
-              Process.attachModuleObserver({
-                  onAdded(module) {
-                      const name = module.name || module.path || "(unnamed)";
-                      if (name.indexOf("ssl") !== -1) console.log(`SPIKE-OBSERVER (unretained): ${name}`);
-                  }
-              });
-
-              console.log("SPIKE-OBSERVER: both attached");
+              // What it does export around those, so a rename shows up by name rather than
+              // being guessed at (BoringSSL renamed the stack functions upstream long ago):
+              const related = boringssl.enumerateExports()
+                  .map((e) => e.name)
+                  .filter((name) => /sk_|CRYPTO_BUFFER|custom_verify|peer_certificates/.test(name));
+              console.log(`SPIKE-TLS: ${related.length} related export(s): ${related.join(", ")}`);
           } catch (e) {
-              console.log(`SPIKE-OBSERVER: could not attach: ${e}`);
+              console.log(`SPIKE-TLS: could not inspect libboringssl.dylib: ${e}`);
           }
-
-          // Well after the app's first request, so anything TLS-related is definitely loaded:
-          setTimeout(() => {
-              try {
-                  const modules = Process.enumerateModules()
-                      .filter((module) => (module.name || "").indexOf("ssl") !== -1);
-                  console.log(`SPIKE-MODULES: ${modules.length} loaded module(s) matching "ssl"`);
-                  modules.forEach((module) =>
-                      console.log(`SPIKE-MODULES:   ${module.name} @ ${module.path}`));
-              } catch (e) {
-                  console.log(`SPIKE-MODULES: could not enumerate: ${e}`);
-              }
-
-              ["libboringssl.dylib", "/usr/lib/libboringssl.dylib"].forEach((name) => {
-                  try {
-                      const module = Process.getModuleByName(name);
-                      console.log(`SPIKE-MODULES: getModuleByName(${name}) => ${module.path}`);
-                  } catch (e) {
-                      console.log(`SPIKE-MODULES: getModuleByName(${name}) failed: ${e}`);
-                  }
-              });
-
-              try {
-                  patchTargetLib(Process.getModuleByName("libboringssl.dylib"), "libboringssl.dylib");
-                  console.log("SPIKE-TLS-LATE: hooked by hand");
-              } catch (e) {
-                  console.log(`SPIKE-TLS-LATE: could not hook by hand: ${e}`);
-              }
-          }, 20000);
           '''
 
           # The gadget's console output doesn't reach the simulator log at all (established by the
@@ -666,12 +651,6 @@ jobs:
             "native-connect-hook hooked, with our config applied"
           check "== Redirecting Network framework connections to 127.0.0.1:8000 ==" \
             "ios-connect-hook hooked Network framework"
-          # N.b. the spike's diagnostics hook libboringssl by hand 20s in, and that path logs the
-          # same message, so say so plainly rather than reporting a pass that isn't the script's:
-          if grep -qF "SPIKE-TLS-LATE: hooked by hand" <<< "$OUTPUT"; then
-            echo "N.b. the spike's diagnostics hooked libboringssl by hand, so the TLS checks" \
-                 "below show that it can be hooked at all, not that native-tls-hook did it itself"
-          fi
           check "== Hooked native TLS lib libboringssl.dylib ==" "native-tls-hook hooked iOS's TLS"
 
           # The real question: does traffic actually end up intercepted? Redirection and
