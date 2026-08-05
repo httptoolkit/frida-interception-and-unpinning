@@ -167,22 +167,31 @@ const CERT_DER = pemToDer(CERT_PEM);
 function waitForModule(moduleName, callback) {
     if (Array.isArray(moduleName)) {
         moduleName.forEach(module => waitForModule(module, callback));
+        return;
     }
 
-    try {
-        const module = Process.getModuleByName(moduleName)
-        module.ensureInitialized();
+    const module = findLoadedModule(moduleName);
+
+    if (module) {
         callback(module);
         return;
-    } catch (e) {
-        try {
-            const module = Module.load(moduleName);
-            callback(module);
-            return;
-        } catch (e) {}
     }
 
     MODULE_LOAD_CALLBACKS[moduleName] = callback;
+}
+
+function findLoadedModule(moduleName) {
+    try {
+        const module = Process.getModuleByName(moduleName);
+        module.ensureInitialized();
+        return module;
+    } catch (e) {}
+
+    try {
+        return Module.load(moduleName);
+    } catch (e) {}
+
+    return null;
 }
 
 const getModuleName = (nameOrPath) => {
