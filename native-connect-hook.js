@@ -37,11 +37,24 @@
 
         if (!systemModule) throw new Error("Could not find libc or libsystem_c");
 
-        fcntl = new NativeFunction(systemModule.getExportByName('fcntl'), 'int', ['int', 'int', 'int']);
-        send = new NativeFunction(systemModule.getExportByName('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
-        recv = new NativeFunction(systemModule.getExportByName('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        const resolveExport = (name) => {
+            let addr = systemModule.findExportByName(name);
+            if (addr) return addr;
+            if (typeof Module.getGlobalExportByName === 'function') {
+                try { addr = Module.getGlobalExportByName(name); if (addr) return addr; } catch (_) {}
+            }
+            if (typeof Module.findExportByName === 'function') {
+                addr = Module.findExportByName(null, name);
+                if (addr) return addr;
+            }
+            throw new Error(`Could not resolve export '${name}'`);
+        };
 
-        conn = systemModule.getExportByName('connect')
+        fcntl = new NativeFunction(resolveExport('fcntl'), 'int', ['int', 'int', 'int']);
+        send = new NativeFunction(resolveExport('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        recv = new NativeFunction(resolveExport('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+
+        conn = resolveExport('connect')
     } catch (e) {
         console.error("Failed to set up native hooks:", e.message);
         console.warn('Could not initialize system functions to to hook raw traffic');
