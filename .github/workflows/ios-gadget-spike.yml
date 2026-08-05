@@ -603,6 +603,8 @@ jobs:
           check "SPIKE-MARKER: all scripts loaded" "our scripts ran under the gadget"
           check "== Redirecting all TCP connections to 127.0.0.1:8000 ==" \
             "native-connect-hook hooked, with our config applied"
+          check "== Redirecting Network framework connections to 127.0.0.1:8000 ==" \
+            "ios-connect-hook hooked Network framework"
           check "== Hooked native TLS lib libboringssl.dylib ==" "native-tls-hook hooked iOS's TLS"
 
           # The real question: does traffic actually end up intercepted? Redirection and
