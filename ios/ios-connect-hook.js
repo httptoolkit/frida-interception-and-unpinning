@@ -18,24 +18,27 @@
  * SPDX-FileCopyrightText: Tim Perry <tim@httptoolkit.com>
  */
 
-// This is the method we're going to patch:
-// https://developer.apple.com/documentation/network/2976677-nw_connection_create (iOS 12+)
-const libnetwork = Process.getModuleByName('libnetwork.dylib');
-const nw_connection_create = libnetwork.getExportByName('nw_connection_create');
+waitForModule('libnetwork.dylib', (libnetwork) => {
+    // This is the method we're going to patch:
+    // https://developer.apple.com/documentation/network/2976677-nw_connection_create (iOS 12+)
+    const nw_connection_create = libnetwork.getExportByName('nw_connection_create');
 
-// This is the method to make a new endpoint to connect to:
-// https://developer.apple.com/documentation/network/2976720-nw_endpoint_create_host (iOS 12+)
-const nw_endpoint_create_host = new NativeFunction(
-    libnetwork.findExportByName('nw_endpoint_create_host'),
-    'pointer', ['pointer', 'pointer']
-);
+    // This is the method to make a new endpoint to connect to:
+    // https://developer.apple.com/documentation/network/2976720-nw_endpoint_create_host (iOS 12+)
+    const nw_endpoint_create_host = new NativeFunction(
+        libnetwork.findExportByName('nw_endpoint_create_host'),
+        'pointer', ['pointer', 'pointer']
+    );
 
-const newHostStr = Memory.allocUtf8String(PROXY_HOST);
-const newPortStr = Memory.allocUtf8String(PROXY_PORT.toString());
+    const newHostStr = Memory.allocUtf8String(PROXY_HOST);
+    const newPortStr = Memory.allocUtf8String(PROXY_PORT.toString());
 
-Interceptor.attach(nw_connection_create, {
-    onEnter: function (args) {
-        // Replace the endpoint argument entirely with our own:
-        args[0] = nw_endpoint_create_host(newHostStr, newPortStr);
-    }
+    Interceptor.attach(nw_connection_create, {
+        onEnter: function (args) {
+            // Replace the endpoint argument entirely with our own:
+            args[0] = nw_endpoint_create_host(newHostStr, newPortStr);
+        }
+    });
+
+    console.log(`== Redirecting Network framework connections to ${PROXY_HOST}:${PROXY_PORT} ==`);
 });
