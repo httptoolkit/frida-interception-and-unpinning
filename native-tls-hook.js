@@ -41,8 +41,14 @@ const TARGET_LIBS = [
 
 TARGET_LIBS.forEach((targetLib) => {
     waitForModule(targetLib.name, (targetModule) => {
-        patchTargetLib(targetModule, targetLib.name);
-        targetLib.hooked = true;
+        try {
+            patchTargetLib(targetModule, targetLib.name);
+            targetLib.hooked = true;
+        } catch (e) {
+            // Report which library failed & why, but keep going: the remaining libs here, and the
+            // scripts after this one, are all independent of this one failing.
+            console.log(`\n !!! --- Could not hook TLS in ${targetLib.name}: ${e} --- !!!`);
+        }
     });
 
     if (
@@ -56,6 +62,56 @@ TARGET_LIBS.forEach((targetLib) => {
     }
 });
 
+const MAX_CHAIN_LENGTH_TO_SCAN = 1000;
+
+// Reading a STACK_OF(CRYPTO_BUFFER). BoringSSL exports OPENSSL_sk_num & OPENSSL_sk_value, plus
+// sk_num & sk_value as deprecated aliases for them, but Apple's libboringssl.dylib on iOS 26
+// exports none of the four, so where they're all missing we read the stack ourselves.
+//
+// The struct is opaque in BoringSSL's headers, so that does depend on its internal layout:
+//
+//     struct stack_st { size_t num; void **data; int sorted; size_t num_alloc; ... }
+function getStackAccessors(targetModule) {
+    const exportedAccessors = [
+        ['OPENSSL_sk_num', 'OPENSSL_sk_value'],
+        ['sk_num', 'sk_value']
+    ].map(([numName, valueName]) => ({
+        num: targetModule.findExportByName(numName),
+        value: targetModule.findExportByName(valueName)
+    })).find(({ num, value }) => num && value);
+
+    if (exportedAccessors) {
+        return {
+            sk_num: new NativeFunction(exportedAccessors.num, 'size_t', ['pointer']),
+            sk_value: new NativeFunction(exportedAccessors.value, 'pointer', ['pointer', 'size_t'])
+        };
+    }
+
+    return {
+        sk_num: (stack) => {
+            if (stack.isNull()) return 0;
+
+            const length = stack.readULong();
+            if (length > MAX_CHAIN_LENGTH_TO_SCAN) {
+                throw new Error(`Implausible certificate chain length (${length})`);
+            }
+            return length;
+        },
+        sk_value: (stack, i) => {
+            const cert = stack
+                .add(Process.pointerSize) // Past the count, to the array of pointers
+                .readPointer()
+                .add(i * Process.pointerSize)
+                .readPointer();
+
+            // Reading from JS throws if this isn't mapped, where handing a bad pointer to the
+            // CRYPTO_BUFFER functions below would take the whole app down instead:
+            cert.readU8();
+            return cert;
+        }
+    };
+}
+
 function patchTargetLib(targetModule, targetName) {
     // Get the peer certificates from an SSL pointer. Returns a pointer to a STACK_OF(CRYPTO_BUFFER)
     // which requires use of the next few methods below to actually access.
@@ -67,15 +123,7 @@ function patchTargetLib(targetModule, targetName) {
 
     // Stack methods:
     // https://commondatastorage.googleapis.com/chromium-boringssl-docs/stack.h.html
-    const sk_num = new NativeFunction(
-        targetModule.getExportByName('sk_num'),
-        'size_t', ['pointer']
-    );
-
-    const sk_value = new NativeFunction(
-        targetModule.getExportByName('sk_value'),
-        'pointer', ['pointer', 'int']
-    );
+    const { sk_num, sk_value } = getStackAccessors(targetModule);
 
     // Crypto buffer methods:
     // https://commondatastorage.googleapis.com/chromium-boringssl-docs/pool.h.html
@@ -96,6 +144,26 @@ function patchTargetLib(targetModule, targetName) {
     // 'real' callback is always the exact same address, so this is much more efficient than creating
     // a new callback every time.
     const verificationCallbackCache = {};
+
+    const peerCertsIncludeOurCert = (ssl) => {
+        const peerCerts = SSL_get0_peer_certificates(ssl);
+
+        // Loop through every cert in the chain:
+        for (let i = 0; i < sk_num(peerCerts); i++) {
+            // For each cert, check if it *exactly* matches our configured CA cert:
+            const cert = sk_value(peerCerts, i);
+            const certDataLength = crypto_buffer_len(cert).toNumber();
+
+            if (certDataLength !== CERT_DER.byteLength) continue;
+
+            const certPointer = crypto_buffer_data(cert);
+            const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
+
+            if (certData.every((byte, j) => CERT_DER[j] === byte)) return true;
+        }
+
+        return false;
+    };
 
     const buildVerificationCallback = (realCallbackAddr) => {
         if (!verificationCallbackCache[realCallbackAddr]) {
@@ -136,23 +204,18 @@ function patchTargetLib(targetModule, targetName) {
                 // or leaf certs, and lots of other issues. This is significantly better than nothing,
                 // but it is not production-ready TLS verification for general use in untrusted envs!
 
-                const peerCerts = SSL_get0_peer_certificates(ssl);
+                let ourCertPresent = false;
+                try {
+                    ourCertPresent = peerCertsIncludeOurCert(ssl);
+                } catch (e) {
+                    // Failing to read the chain must never mean 'trusted'. Fall through to the real
+                    // callback, which is exactly who would have decided this if we weren't here:
+                    console.log(`\n !!! --- Could not read ${targetName} peer certs: ${e} --- !!!`);
+                }
 
-                // Loop through every cert in the chain:
-                for (let i = 0; i < sk_num(peerCerts); i++) {
-                    // For each cert, check if it *exactly* matches our configured CA cert:
-                    const cert = sk_value(peerCerts, i);
-                    const certDataLength = crypto_buffer_len(cert).toNumber();
-
-                    if (certDataLength !== CERT_DER.byteLength) continue;
-
-                    const certPointer = crypto_buffer_data(cert);
-                    const certData = new Uint8Array(certPointer.readByteArray(certDataLength));
-
-                    if (certData.every((byte, j) => CERT_DER[j] === byte)) {
-                        if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
-                        return SSL_VERIFY_OK;
-                    }
+                if (ourCertPresent) {
+                    if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
+                    return SSL_VERIFY_OK;
                 }
 
                 // No matched peer - fallback to the provided callback instead:
