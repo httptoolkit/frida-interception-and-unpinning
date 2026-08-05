@@ -62,8 +62,7 @@ TARGET_LIBS.forEach((targetLib) => {
     }
 });
 
-// Certificate chains are tiny. A stack longer than this means we're not looking at a stack at all:
-const MAX_PLAUSIBLE_CHAIN_LENGTH = 100;
+const MAX_CHAIN_LENGTH_TO_SCAN = 1000;
 
 // Reading a STACK_OF(CRYPTO_BUFFER). BoringSSL exports OPENSSL_sk_num & OPENSSL_sk_value, plus
 // sk_num & sk_value as deprecated aliases for them, but Apple's libboringssl.dylib on iOS 26
@@ -93,7 +92,7 @@ function getStackAccessors(targetModule) {
             if (stack.isNull()) return 0;
 
             const length = stack.readULong();
-            if (length > MAX_PLAUSIBLE_CHAIN_LENGTH) {
+            if (length > MAX_CHAIN_LENGTH_TO_SCAN) {
                 throw new Error(`Implausible certificate chain length (${length})`);
             }
             return length;
