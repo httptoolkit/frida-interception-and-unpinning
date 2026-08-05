@@ -268,50 +268,6 @@ jobs:
           }, 5000);
           '''
 
-          # Spike-only diagnostics, run at load: the same moment native-tls-hook.js runs, so
-          # what they see is what it saw. The last run established that libboringssl.dylib is
-          # already loaded by then (Process.attachModuleObserver replays loaded modules as it
-          # attaches, and ours reported it before attaching even returned), and that hooking it
-          # by hand still fails with "unable to find export 'sk_num'".
-          #
-          # So these answer the two remaining questions: why waitForModule didn't find a module
-          # that was right there, and which of the symbols patchTargetLib needs actually exist.
-          diagnostics = '''
-          try {
-              const boringssl = Process.getModuleByName("libboringssl.dylib");
-              console.log(`SPIKE-TLS: getModuleByName => ${boringssl.path}`);
-
-              try {
-                  boringssl.ensureInitialized();
-                  console.log("SPIKE-TLS: ensureInitialized() succeeded");
-              } catch (e) {
-                  console.log(`SPIKE-TLS: ensureInitialized() threw: ${e}`);
-              }
-
-              try {
-                  console.log(`SPIKE-TLS: Module.load => ${Module.load("libboringssl.dylib").path}`);
-              } catch (e) {
-                  console.log(`SPIKE-TLS: Module.load threw: ${e}`);
-              }
-
-              ["SSL_get0_peer_certificates", "sk_num", "sk_value",
-                  "CRYPTO_BUFFER_len", "CRYPTO_BUFFER_data",
-                  "SSL_set_custom_verify", "SSL_CTX_set_custom_verify", "SSL_get_psk_identity"
-              ].forEach((name) => {
-                  const found = boringssl.findExportByName(name) ? "exported" : "MISSING";
-                  console.log(`SPIKE-TLS: ${name}: ${found}`);
-              });
-
-              // What it does export around those, so a rename shows up by name rather than
-              // being guessed at (BoringSSL renamed the stack functions upstream long ago):
-              const related = boringssl.enumerateExports()
-                  .map((e) => e.name)
-                  .filter((name) => /sk_|CRYPTO_BUFFER|custom_verify|peer_certificates/.test(name));
-              console.log(`SPIKE-TLS: ${related.length} related export(s): ${related.join(", ")}`);
-          } catch (e) {
-              console.log(`SPIKE-TLS: could not inspect libboringssl.dylib: ${e}`);
-          }
-          '''
 
           # The gadget's console output doesn't reach the simulator log at all (established by the
           # script mode check below), so we tee it to a file in the app's own data container,
@@ -345,8 +301,7 @@ jobs:
               ('native-connect-hook.js', open('native-connect-hook.js').read()),
               ('the spike additions',
                   send_a_request.replace('__MARKER_PATH__',
-                      os.environ['DATA_DIR'] + '/scripts-loaded.txt')),
-              ('the spike diagnostics', diagnostics)
+                      os.environ['DATA_DIR'] + '/scripts-loaded.txt'))
           ]
 
           body = '\n'.join(
