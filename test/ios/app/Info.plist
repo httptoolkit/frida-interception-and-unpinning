@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>__APP_NAME__</string>
+  <key>CFBundleIdentifier</key><string>__BUNDLE_ID__</string>
+  <key>CFBundleName</key><string>__APP_NAME__</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
+  <key>DTPlatformName</key><string>iphonesimulator</string>
+  <key>MinimumOSVersion</key><string>15.0</string>
+  <key>UIDeviceFamily</key><array><integer>1</integer></array>
+  <key>UILaunchScreen</key><dict/>
+
+  <!-- App Transport Security blocks plain HTTP by default, which would stop the app's HTTP test
+       case before any of our hooks could see it: -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key><true/>
+  </dict>
+</dict>
+</plist>

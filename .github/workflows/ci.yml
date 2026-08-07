@@ -1,10 +1,5 @@
 name: CI
-on:
-  push:
-    # TEMPORARY: skipped on ios-tests while the iOS spike is being iterated on there. Drop this
-    # before merging, and note it does not apply once that branch has a PR open.
-    branches-ignore: [ios-tests]
-  pull_request:
+on: [push, pull_request]
 jobs:
   build:
     name: Build & test
@@ -131,3 +126,32 @@ jobs:
             echo "Emulator ready to test"
             cd test/android && npm install && npm test -- --retries 3
             echo "Tests completed."
+
+  test-ios:
+    name: Test on iOS simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'test/ios/package-lock.json'
+
+      # Unlike Android, iOS runs our scripts via Frida's gadget, not the CLI, so this is here
+      # only for its copy of the ObjC bridge, which the gadget can't provide itself:
+      - name: Install Frida tools
+        run: pip install --user frida-tools==14.10.4
+
+      - name: Set up the simulator
+        run: ./test/ios/setup-simulator.sh
+
+      - name: Run tests
+        run: cd test/ios && npm install && npm test -- --retries 3

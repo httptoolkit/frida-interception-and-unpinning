@@ -1,0 +1,14 @@
+{
+  "name": "frida-scripts-ios-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "mocha test.ts"
+  },
+  "dependencies": {
+    "@types/chai": "^5.2.2",
+    "chai": "^5.2.0",
+    "mocha": "^11.7.1",
+    "mockttp": "^4.0.1"
+  }
+}
