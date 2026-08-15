@@ -31,23 +31,22 @@
 
     let fcntl, send, recv, conn;
     try {
-        const systemModule = Process.findModuleByName('libc.so') ?? // Android
-                             Process.findModuleByName('libc.so.6') ?? // Linux
-                             Process.findModuleByName('libsystem_c.dylib'); // iOS
+        const systemModules = [
+            'libc.so',                // Android
+            'libc.so.6',              // Linux
+            'libsystem_c.dylib',      // iOS
+            'libsystem_kernel.dylib' // iOS (syscall wrappers, e.g. fcntl)
+        ].map((name) => Process.findModuleByName(name))
+         .filter((mod) => mod !== null);
 
-        if (!systemModule) throw new Error("Could not find libc or libsystem_c");
+        if (systemModules.length === 0) throw new Error("Could not find any libc/libsystem module");
 
         const resolveExport = (name) => {
-            let addr = systemModule.findExportByName(name);
-            if (addr) return addr;
-            if (typeof Module.getGlobalExportByName === 'function') {
-                try { addr = Module.getGlobalExportByName(name); if (addr) return addr; } catch (_) {}
-            }
-            if (typeof Module.findExportByName === 'function') {
-                addr = Module.findExportByName(null, name);
+            for (const mod of systemModules) {
+                const addr = mod.findExportByName(name);
                 if (addr) return addr;
             }
-            throw new Error(`Could not resolve export '${name}'`);
+            throw new Error(`Could not resolve export '${name}' in system modules`);
         };
 
         fcntl = new NativeFunction(resolveExport('fcntl'), 'int', ['int', 'int', 'int']);
