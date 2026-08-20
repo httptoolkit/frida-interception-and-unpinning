@@ -31,17 +31,29 @@
 
     let fcntl, send, recv, conn;
     try {
-        const systemModule = Process.findModuleByName('libc.so') ?? // Android
-                             Process.findModuleByName('libc.so.6') ?? // Linux
-                             Process.findModuleByName('libsystem_c.dylib'); // iOS
+        const systemModules = [
+            'libc.so',                // Android
+            'libc.so.6',              // Linux
+            'libsystem_c.dylib',      // iOS
+            'libsystem_kernel.dylib' // iOS (syscall wrappers, e.g. fcntl)
+        ].map((name) => Process.findModuleByName(name))
+         .filter((mod) => mod !== null);
 
-        if (!systemModule) throw new Error("Could not find libc or libsystem_c");
+        if (systemModules.length === 0) throw new Error("Could not find any libc/libsystem module");
 
-        fcntl = new NativeFunction(systemModule.getExportByName('fcntl'), 'int', ['int', 'int', 'int']);
-        send = new NativeFunction(systemModule.getExportByName('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
-        recv = new NativeFunction(systemModule.getExportByName('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        const resolveExport = (name) => {
+            for (const mod of systemModules) {
+                const addr = mod.findExportByName(name);
+                if (addr) return addr;
+            }
+            throw new Error(`Could not resolve export '${name}' in system modules`);
+        };
 
-        conn = systemModule.getExportByName('connect')
+        fcntl = new NativeFunction(resolveExport('fcntl'), 'int', ['int', 'int', 'int']);
+        send = new NativeFunction(resolveExport('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        recv = new NativeFunction(resolveExport('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+
+        conn = resolveExport('connect')
     } catch (e) {
         console.error("Failed to set up native hooks:", e.message);
         console.warn('Could not initialize system functions to to hook raw traffic');
