@@ -187,20 +187,41 @@ function patchTargetLib(targetModule, targetName) {
                 ? new NativeFunction(realCallbackAddr, 'int', ['pointer', 'pointer'])
                 : () => SSL_VERIFY_INVALID;
 
-            let pendingCheckThreads = new Set();
+            // We let one thread at a time into the app's callback, as parallel calls seem to
+            // crash in some specific scenarios:
+            const pendingCheckThreads = new Set();
 
-            const hookedCallback = new NativeCallback(function (ssl, out_alert) {
-                let realResult = false; // False = not yet called, 0/1 = call result
-
+            const callRealCallback = (ssl, out_alert) => {
                 const threadId = Process.getCurrentThreadId();
-                const alreadyHaveLock = pendingCheckThreads.has(threadId);
 
-                // We try to have only one thread running these checks at a time, as parallel calls
-                // here on the same underlying callback seem to crash in some specific scenarios
-                while (pendingCheckThreads.size > 0 && !alreadyHaveLock) {
+                // Detect and allow (better than deadlocking) on reentrant calls:
+                if (pendingCheckThreads.has(threadId)) return realCallback(ssl, out_alert);
+
+                while (pendingCheckThreads.size > 0) {
                     Thread.sleep(0.01);
                 }
                 pendingCheckThreads.add(threadId);
+
+                try {
+                    return realCallback(ssl, out_alert);
+                } finally {
+                    pendingCheckThreads.delete(threadId);
+                }
+            };
+
+            const hookedCallback = new NativeCallback(function (ssl, out_alert) {
+                try {
+                    return runVerification(ssl, out_alert);
+                } catch (e) {
+                    // Fail closed if verification throws somehow:
+                    logFailureOnce('verification',
+                        `${targetName} verification failed unexpectedly: ${e}`);
+                    return SSL_VERIFY_INVALID;
+                }
+            }, 'int', ['pointer','pointer']);
+
+            function runVerification(ssl, out_alert) {
+                let realResult = false; // False = not yet called, 0/1 = call result
 
                 if (targetName === 'libsscronet.so') {
                     // Cronet assumes its callback is always called, and crashes if not, so it's
@@ -208,7 +229,7 @@ function patchTargetLib(targetModule, targetName) {
                     // For Conscrypt (libssl) the callback returns with a pending Java exception
                     // and iOS's BoringSSL rejects bad certs via callback side-effects, so we must
                     // not call the callback in those cases.
-                    realResult = realCallback(ssl, out_alert);
+                    realResult = callRealCallback(ssl, out_alert);
                 }
 
                 // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
@@ -230,19 +251,15 @@ function patchTargetLib(targetModule, targetName) {
                     logFailureOnce('cert-read', `Could not read ${targetName} peer certs: ${e}`);
                 }
 
-                if (ourCertPresent) {
-                    if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
-                    return SSL_VERIFY_OK;
-                }
+                if (ourCertPresent) return SSL_VERIFY_OK;
 
                 // No matched peer - fallback to the provided callback instead:
                 if (realResult === false) { // Haven't called it yet
-                    realResult = realCallback(ssl, out_alert);
+                    realResult = callRealCallback(ssl, out_alert);
                 }
 
-                if (!alreadyHaveLock) pendingCheckThreads.delete(threadId);
                 return realResult;
-            }, 'int', ['pointer','pointer']);
+            }
 
             verificationCallbackCache[realCallbackAddr] = hookedCallback;
         }
