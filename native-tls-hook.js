@@ -139,6 +139,7 @@ function patchTargetLib(targetModule, targetName) {
 
     const SSL_VERIFY_OK = 0x0;
     const SSL_VERIFY_INVALID = 0x1;
+    const SSL_VERIFY_RETRY = 0x2;
 
     // The legacy cert_verify_callback uses the opposite convention to ssl_verify_result_t:
     const LEGACY_VERIFY_OK = 0x1;
@@ -230,6 +231,10 @@ function patchTargetLib(targetModule, targetName) {
                     // and iOS's BoringSSL rejects bad certs via callback side-effects, so we must
                     // not call the callback in those cases.
                     realResult = callRealCallback(ssl, out_alert);
+
+                    // Retry means the app's own verification is pending, so in this case
+                    // we always pass the result back to let that complete properly:
+                    if (realResult === SSL_VERIFY_RETRY) return realResult;
                 }
 
                 // Extremely dumb certificate validation: we accept any chain where the *exact* CA cert
