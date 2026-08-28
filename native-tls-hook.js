@@ -140,10 +140,15 @@ function patchTargetLib(targetModule, targetName) {
     const SSL_VERIFY_OK = 0x0;
     const SSL_VERIFY_INVALID = 0x1;
 
+    // The legacy cert_verify_callback uses the opposite convention to ssl_verify_result_t:
+    const LEGACY_VERIFY_OK = 0x1;
+    const LEGACY_VERIFY_INVALID = 0x0;
+
     // We cache the verification callbacks we create. In general (in testing, 100% of the time) the
     // 'real' callback is always the exact same address, so this is much more efficient than creating
     // a new callback every time.
     const verificationCallbackCache = {};
+    const legacyCallbackCache = {};
 
     const peerCertsIncludeOurCert = (ssl) => {
         const peerCerts = SSL_get0_peer_certificates(ssl);
@@ -233,6 +238,41 @@ function patchTargetLib(targetModule, targetName) {
         return verificationCallbackCache[realCallbackAddr];
     };
 
+    // Older BoringSSL predates SSL_set_custom_verify entirely - notably Android 8's libssl.so,
+    // where Conscrypt uses SSL_CTX_set_cert_verify_callback instead. Same idea, but the callback
+    // takes an X509_STORE_CTX rather than an SSL, and returns 1 for a trusted chain, not 0.
+
+    // Both resolved below, but only if we actually take the legacy path:
+    let sslExDataIndex;
+    let X509_STORE_CTX_get_ex_data;
+
+    const buildLegacyVerificationCallback = (realCallbackAddr) => {
+        if (!legacyCallbackCache[realCallbackAddr]) {
+            const realCallback = (realCallbackAddr && !realCallbackAddr.isNull())
+                ? new NativeFunction(realCallbackAddr, 'int', ['pointer', 'pointer'])
+                : () => LEGACY_VERIFY_INVALID;
+
+            legacyCallbackCache[realCallbackAddr] = new NativeCallback(function (storeCtx, arg) {
+                // Unlike the custom_verify path, we never need to call the real callback here.
+                let ourCertPresent = false;
+                try {
+                    const ssl = X509_STORE_CTX_get_ex_data(storeCtx, sslExDataIndex);
+                    if (ssl.isNull()) throw new Error('No SSL attached to X509_STORE_CTX');
+                    ourCertPresent = peerCertsIncludeOurCert(ssl);
+                } catch (e) {
+                    // This will fall through to the real callback if anything goes wrong
+                    console.log(`\n !!! --- Could not read ${targetName} peer certs: ${e} --- !!!`);
+                }
+
+                if (ourCertPresent) return LEGACY_VERIFY_OK;
+
+                return realCallback(storeCtx, arg);
+            }, 'int', ['pointer', 'pointer']);
+        }
+
+        return legacyCallbackCache[realCallbackAddr];
+    };
+
     const customVerifyAddrs = [
         targetModule.findExportByName("SSL_set_custom_verify"),
         targetModule.findExportByName("SSL_CTX_set_custom_verify")
@@ -251,9 +291,40 @@ function patchTargetLib(targetModule, targetName) {
         }, 'void', ['pointer', 'int', 'pointer']));
     });
 
-    if (customVerifyAddrs.length) {
+    // Iff custom_verify is missing, try to fallback to the legacy APIs (never do both):
+    const legacyVerifyAddr = customVerifyAddrs.length
+        ? null
+        : targetModule.findExportByName("SSL_CTX_set_cert_verify_callback");
+
+    if (legacyVerifyAddr) {
+        sslExDataIndex = new NativeFunction(
+            targetModule.getExportByName('SSL_get_ex_data_X509_STORE_CTX_idx'),
+            'int', []
+        )();
+
+        X509_STORE_CTX_get_ex_data = new NativeFunction(
+            targetModule.getExportByName('X509_STORE_CTX_get_ex_data'),
+            'pointer', ['pointer', 'int']
+        );
+
+        const set_cert_verify_fn = new NativeFunction(
+            legacyVerifyAddr,
+            'void', ['pointer', 'pointer', 'pointer']
+        );
+
+        // As in the main path: replace any configured cert callback with our own validation
+        Interceptor.replace(set_cert_verify_fn, new NativeCallback(function (ctx, providedCallbackAddr, arg) {
+            set_cert_verify_fn(ctx, buildLegacyVerificationCallback(providedCallbackAddr), arg);
+        }, 'void', ['pointer', 'pointer', 'pointer']));
+    }
+
+    const hookedMethodCount = customVerifyAddrs.length + (legacyVerifyAddr ? 1 : 0);
+
+    if (hookedMethodCount) {
         if (DEBUG_MODE) {
-            console.log(`[+] Patched ${customVerifyAddrs.length} ${targetName} verification methods`);
+            console.log(`[+] Patched ${hookedMethodCount} ${targetName} verification methods${
+                legacyVerifyAddr ? ' (legacy cert_verify_callback)' : ''
+            }`);
         }
         console.log(`== Hooked native TLS lib ${targetName} ==`);
     } else {
@@ -267,8 +338,8 @@ function patchTargetLib(targetModule, targetName) {
         Interceptor.replace(get_psk_identity_addr, new NativeCallback(function(ssl) {
             return "PSK_IDENTITY_PLACEHOLDER";
         }, 'pointer', ['pointer']));
-    } else if (customVerifyAddrs.length) {
-        console.log(`Patched ${customVerifyAddrs.length} custom_verify methods, but couldn't find get_psk_identity`);
+    } else if (hookedMethodCount) {
+        console.log(`Patched ${hookedMethodCount} verification methods, but couldn't find get_psk_identity`);
     }
 }
 
