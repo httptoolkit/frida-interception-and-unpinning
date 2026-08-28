@@ -21,6 +21,7 @@ describe('Test Android unpinning', function () {
     this.timeout(4 * 60_000);
 
     let fridaSession: ChildProcess.ChildProcess | undefined;
+    let fridaOutput = ''; // Everything our scripts have logged since the last launch
     let proxyServer: mockttp.Mockttp;
 
     before(async () => {
@@ -123,7 +124,7 @@ describe('Test Android unpinning', function () {
                 stdio: 'pipe'
             });
 
-            let fridaOutput = '';
+            fridaOutput = '';
             let spawnError: Error | undefined;
             session.stdout!.on('data', (d) => { fridaOutput += d.toString(); });
             session.stderr!.on('data', (d) => { fridaOutput += d.toString(); });
@@ -327,6 +328,18 @@ describe('Test Android unpinning', function () {
                     'RAW CUSTOM-PINNED REQUEST'
                 ]
             });
+        });
+
+        it("the native TLS hook should patch the app's TLS library", () => {
+            // The Java-level unpinning alone is enough for every button above, so without this a
+            // native hook that quietly patched nothing would still pass the whole scenario. This
+            // also tells us that libssl.so hooks on every API level in the matrix, which differ
+            // enough here that Android 8 needs a whole separate code path.
+
+            // N.b. this matches the success message specifically - 'libssl.so' alone would also
+            // match the messages logged when hooking it fails:
+            expect(fridaOutput).to.include('== Hooked native TLS lib libssl.so ==');
+            expect(fridaOutput).not.to.include('Could not hook TLS in');
         });
 
     });
