@@ -331,4 +331,46 @@ describe('Test Android unpinning', function () {
 
     });
 
+    describe("given native TLS interception only", () => {
+
+        beforeEach(async () => {
+            await launchFrida([
+                './test/android/tmp/config.js', // Our custom config
+                // Just enough to reach the proxy, plus the native TLS hook. No system certificate
+                // injection and no Java unpinning, so the native hook is the only reason the app
+                // trusts our CA at all - which is what makes this the scenario that exercises it.
+                './native-connect-hook.js',
+                './android/android-proxy-override.js',
+                './native-tls-hook.js'
+            ]);
+        });
+
+        it("should intercept TLS that the platform itself would reject", async () => {
+            // This ensures native TLS interception handles Conscrypt correctly, which is tricky
+            // as its callback has exception-throwing side effects (see #218). Note that this
+            // alone does cover config-pinned, context-pinned, Volley & TrustKit requests.
+            await testAllButtons('Success', {
+                exceptions: [
+                    // Pinned above the TLS layer, in Java, so a native trust hook can't help:
+                    // these need the Java-level unpinning scripts.
+                    'OKHTTP PINNED REQUEST',
+                    'APPMATTUS CT REQUEST',
+                    'APPMATTUS+OKHTTP CT REQUEST',
+                    // WebView does its networking in its own sandboxed process, which our scripts
+                    // are not attached to at all:
+                    'UNPINNED WEBVIEW REQUEST',
+                    // HTTP/3 is blocked outright by the config, and this one doesn't fall back to
+                    // anything we've made trusted:
+                    'UNPINNED HTTP/3 REQUEST',
+                    // Flutter bundles its own TLS stack & CA store, and ignores the proxy settings,
+                    // so it connects out directly & untouched:
+                    'FLUTTER REQUEST',
+                    // This checks the certificate itself, by hand, at the lowest level:
+                    'RAW CUSTOM-PINNED REQUEST'
+                ]
+            });
+        });
+
+    });
+
 });

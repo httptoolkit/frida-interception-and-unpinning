@@ -191,11 +191,12 @@ function patchTargetLib(targetModule, targetName) {
                 }
                 pendingCheckThreads.add(threadId);
 
-                if (targetName !== 'libboringssl.dylib') {
-                    // Cronet assumes its callback is always called, and crashes if not. iOS's BoringSSL
-                    // meanwhile seems to use some negative checks in its callback, and rejects the
-                    // connection independently of the return value here if it's called with a bad cert.
-                    // End result: we *only sometimes* proactively call the callback.
+                if (targetName === 'libsscronet.so') {
+                    // Cronet assumes its callback is always called, and crashes if not, so it's
+                    // the one library where we call it up front regardless of what we decide.
+                    // For Conscrypt (libssl) the callback returns with a pending Java exception
+                    // and iOS's BoringSSL rejects bad certs via callback side-effects, so we must
+                    // not call the callback in those cases.
                     realResult = realCallback(ssl, out_alert);
                 }
 
