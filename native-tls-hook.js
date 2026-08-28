@@ -144,6 +144,15 @@ function patchTargetLib(targetModule, targetName) {
     const LEGACY_VERIFY_OK = 0x1;
     const LEGACY_VERIFY_INVALID = 0x0;
 
+    // Some failures are permanent, and so end up firing on every handshake. We log them
+    // with logFailureOnce to track just the first instance of these:
+    const loggedFailures = new Set();
+    const logFailureOnce = (kind, message) => {
+        if (loggedFailures.has(kind)) return;
+        loggedFailures.add(kind);
+        console.log(`\n !!! --- ${message} --- !!!`);
+    };
+
     // We cache the verification callbacks we create. In general (in testing, 100% of the time) the
     // 'real' callback is always the exact same address, so this is much more efficient than creating
     // a new callback every time.
@@ -153,8 +162,10 @@ function patchTargetLib(targetModule, targetName) {
     const peerCertsIncludeOurCert = (ssl) => {
         const peerCerts = SSL_get0_peer_certificates(ssl);
 
+        const chainLength = Number(sk_num(peerCerts));
+
         // Loop through every cert in the chain:
-        for (let i = 0; i < sk_num(peerCerts); i++) {
+        for (let i = 0; i < chainLength; i++) {
             // For each cert, check if it *exactly* matches our configured CA cert:
             const cert = sk_value(peerCerts, i);
             const certDataLength = crypto_buffer_len(cert).toNumber();
@@ -216,7 +227,7 @@ function patchTargetLib(targetModule, targetName) {
                 } catch (e) {
                     // Failing to read the chain must never mean 'trusted'. Fall through to the real
                     // callback, which is exactly who would have decided this if we weren't here:
-                    console.log(`\n !!! --- Could not read ${targetName} peer certs: ${e} --- !!!`);
+                    logFailureOnce('cert-read', `Could not read ${targetName} peer certs: ${e}`);
                 }
 
                 if (ourCertPresent) {
@@ -262,7 +273,7 @@ function patchTargetLib(targetModule, targetName) {
                     ourCertPresent = peerCertsIncludeOurCert(ssl);
                 } catch (e) {
                     // This will fall through to the real callback if anything goes wrong
-                    console.log(`\n !!! --- Could not read ${targetName} peer certs: ${e} --- !!!`);
+                    logFailureOnce('cert-read', `Could not read ${targetName} peer certs: ${e}`);
                 }
 
                 if (ourCertPresent) return LEGACY_VERIFY_OK;
