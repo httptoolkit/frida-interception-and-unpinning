@@ -64,6 +64,9 @@ TARGET_LIBS.forEach((targetLib) => {
 
 const MAX_CHAIN_LENGTH_TO_SCAN = 1000;
 
+// Preallocated once then returned by our SSL_get_psk_identity hook below.
+const PSK_IDENTITY = Memory.allocUtf8String('PSK_IDENTITY_PLACEHOLDER');
+
 // Reading a STACK_OF(CRYPTO_BUFFER). BoringSSL exports OPENSSL_sk_num & OPENSSL_sk_value, plus
 // sk_num & sk_value as deprecated aliases for them, but Apple's libboringssl.dylib on iOS 26
 // exports none of the four, so where they're all missing we read the stack ourselves.
@@ -369,9 +372,10 @@ function patchTargetLib(targetModule, targetName) {
     if (get_psk_identity_addr) {
         // Hooking this is apparently required for some verification paths which check the
         // result is not 0x0. Any return value should work fine though.
-        Interceptor.replace(get_psk_identity_addr, new NativeCallback(function(ssl) {
-            return "PSK_IDENTITY_PLACEHOLDER";
-        }, 'pointer', ['pointer']));
+        Interceptor.replace(get_psk_identity_addr, new NativeCallback(
+            () => PSK_IDENTITY,
+            'pointer', ['pointer']
+        ));
     } else if (hookedMethodCount) {
         console.log(`Patched ${hookedMethodCount} verification methods, but couldn't find get_psk_identity`);
     }
