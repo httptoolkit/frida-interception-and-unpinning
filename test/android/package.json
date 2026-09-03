@@ -10,6 +10,6 @@
     "chai": "^5.2.0",
     "fast-xml-parser": "^5.3.0",
     "mocha": "^11.7.1",
-    "mockttp": "^4.0.1"
+    "mockttp": "^4.6.2"
   }
 }
