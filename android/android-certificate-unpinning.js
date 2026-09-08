@@ -449,7 +449,9 @@ const PINNING_FIXES = {
         {
             methodName: 'checkServerTrusted',
             overload: ['[Ljava.security.cert.X509Certificate;', 'java.lang.String'],
-            replacement: CHECK_OUR_TRUST_MANAGER_ONLY,
+            replacement: CHECK_OUR_TRUST_MANAGER_ONLY
+        },
+        {
             methodName: 'checkServerTrusted',
             overload: ['[Ljava.security.cert.X509Certificate;', 'java.lang.String', 'java.lang.String'],
             replacement: () => {
