@@ -6,10 +6,10 @@
     "test": "mocha test.ts"
   },
   "dependencies": {
-    "@types/chai": "^5.2.2",
-    "chai": "^5.2.0",
-    "fast-xml-parser": "^5.3.0",
-    "mocha": "^11.7.1",
+    "@types/chai": "^5.2.3",
+    "chai": "^6.2.2",
+    "fast-xml-parser": "^5.11.1",
+    "mocha": "^12.0.0",
     "mockttp": "^4.6.2"
   }
 }
