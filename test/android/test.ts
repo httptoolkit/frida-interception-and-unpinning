@@ -51,11 +51,30 @@ describe('Test Android unpinning', function () {
         await proxyServer.start();
 
         const configBase = await fs.readFile('../../config.js', 'utf8');
-        const config = configBase
-            .replace(/(?<=const CERT_PEM = `)[^`]+(?=`)/s, cert.trim())
-            .replace(/(?<=const PROXY_HOST = ')[^']+(?=')/, PROXY_HOST)
-            .replace(/(?<=const PROXY_PORT = )\d+(?=;)/, proxyServer.port.toString());
-        await fs.writeFile('./tmp/config.js', config);
+
+        // Writes a copy of the real config.js, pointed at our proxy, with any of the plain
+        // `const X = ...;` settings overridden:
+        const writeConfig = async (
+            filename: string,
+            settings: { [key: string]: string } = {}
+        ) => {
+            let config = configBase
+                .replace(/(?<=const CERT_PEM = `)[^`]+(?=`)/s, cert.trim())
+                .replace(/(?<=const PROXY_HOST = ')[^']+(?=')/, PROXY_HOST)
+                .replace(/(?<=const PROXY_PORT = )\d+(?=;)/, proxyServer.port.toString());
+
+            Object.entries(settings).forEach(([setting, value]) => {
+                const definition = new RegExp(`(?<=const ${setting} = )[^;]+(?=;)`);
+                // Otherwise a renamed or removed setting would silently not be applied:
+                expect(config).to.match(definition, `Config setting ${setting} was not found`);
+                config = config.replace(definition, value);
+            });
+
+            await fs.writeFile(`./tmp/${filename}`, config);
+        };
+
+        await writeConfig('config.js');
+        await writeConfig('config-socks.js', { PROXY_SUPPORTS_SOCKS5: 'true' });
     });
 
     after(async () => {
@@ -379,6 +398,33 @@ describe('Test Android unpinning', function () {
                     // so it connects out directly & untouched:
                     'FLUTTER REQUEST',
                     // This checks the certificate itself, by hand, at the lowest level:
+                    'RAW CUSTOM-PINNED REQUEST'
+                ]
+            });
+        });
+
+    });
+
+    describe("given SOCKS interception", () => {
+
+        beforeEach(async () => {
+            await launchFrida([
+                './test/android/tmp/config-socks.js', // As above, but with SOCKS enabled
+                // Otherwise the standard scripts, exactly as in the full scenario above:
+                './native-connect-hook.js',
+                './native-tls-hook.js',
+                './android/android-proxy-override.js',
+                './android/android-system-certificate-injection.js',
+                './android/android-certificate-unpinning.js',
+                './android/android-certificate-unpinning-fallback.js',
+                './android/android-disable-root-detection.js',
+                './android/android-disable-flutter-certificate-pinning.js',
+            ]);
+        });
+
+        it("all buttons should succeed, except the raw custom-pinned request", async () => {
+            await testAllButtons('Success', {
+                exceptions: [
                     'RAW CUSTOM-PINNED REQUEST'
                 ]
             });

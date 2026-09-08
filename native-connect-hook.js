@@ -29,7 +29,11 @@
         ? 4
         : 2048; // Linux/Android
 
-    let fcntl, send, recv, conn;
+    const ECONNREFUSED = (Process.platform === 'darwin')
+        ? 61
+        : 111; // Linux/Android
+
+    let fcntl, send, recv, poll, conn;
     try {
         const systemModules = [
             'libc.so',                // Android
@@ -52,6 +56,7 @@
         fcntl = new NativeFunction(resolveExport('fcntl'), 'int', ['int', 'int', 'int']);
         send = new NativeFunction(resolveExport('send'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
         recv = new NativeFunction(resolveExport('recv'), 'ssize_t', ['int', 'pointer', 'size_t', 'int']);
+        poll = new NativeFunction(resolveExport('poll'), 'int', ['pointer', 'ulong', 'int']);
 
         conn = resolveExport('connect')
     } catch (e) {
@@ -67,13 +72,21 @@
 
             const addrPtr = ptr(args[1]);
             const addrLen = args[2].toInt32();
-            const addrData = addrPtr.readByteArray(addrLen);
 
             const isTCP = sockType === 'tcp' || sockType === 'tcp6';
             const isUDP = sockType === 'udp' || sockType === 'udp6';
             const isIPv6 = sockType === 'tcp6' || sockType === 'udp6';
 
             if (isTCP || isUDP) {
+                if (addrLen < (isIPv6 ? 24 : 8)) {
+                    if (DEBUG_MODE) {
+                        console.debug(`Ignoring ${sockType} connection with a ${addrLen}-byte address`);
+                    }
+                    this.state = 'ignored';
+                    return;
+                }
+
+                const addrData = addrPtr.readByteArray(addrLen);
                 const portAddrBytes = new DataView(addrData.slice(2, 4));
                 const port = portAddrBytes.getUint16(0, false); // Big endian!
 
@@ -110,7 +123,10 @@
                         addrPtr.add(4).writeU32(0);
                     }
 
-                    console.debug(`Blocking QUIC connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
+                    if (DEBUG_MODE) {
+                        console.debug(`Blocking QUIC connection to ${
+                            getReadableAddress(hostBytes, isIPv6)}:${port}`);
+                    }
                     this.state = 'Blocked';
                 } else if (shouldBeIntercepted) {
                     // Otherwise, it's an unintercepted connection that should be captured:
@@ -127,7 +143,10 @@
                         }
                     }
 
-                    console.log(`Manually intercepting ${sockType} connection to ${getReadableAddress(hostBytes, isIPv6)}:${port}`);
+                    if (DEBUG_MODE) {
+                        console.log(`Manually intercepting ${sockType} connection to ${
+                            getReadableAddress(hostBytes, isIPv6)}:${port}`);
+                    }
 
                     // Overwrite the port with the proxy port:
                     portAddrBytes.setUint16(0, PROXY_PORT, false); // Big endian
@@ -159,27 +178,32 @@
 
             if (this.state === 'intercepting' && PROXY_SUPPORTS_SOCKS5) {
                 const connectSuccess = retval.toInt32() === 0;
+                const { host, port, isIPv6 } = this.originalDestination;
 
                 let handshakeSuccess = false;
+                try {
+                    if (connectSuccess) {
+                        handshakeSuccess = performSocksHandshake(this.sockFd, host, port, isIPv6);
+                    } else {
+                        console.error(`SOCKS: Failed to connect to proxy at ${PROXY_HOST}:${PROXY_PORT}`);
+                    }
+                } catch (e) {
+                    console.error(`SOCKS: Handshake failed for fd ${this.sockFd}: ${e}`);
+                } finally {
+                    if (this.isNonBlocking) {
+                        fcntl(this.sockFd, F_SETFL, this.originalFlags);
+                    }
 
-                const { host, port, isIPv6 } = this.originalDestination;
-                if (connectSuccess) {
-                    handshakeSuccess = performSocksHandshake(this.sockFd, host, port, isIPv6);
-                } else {
-                    console.error(`SOCKS: Failed to connect to proxy at ${PROXY_HOST}:${PROXY_PORT}`);
+                    if (!handshakeSuccess) this.errno = ECONNREFUSED;
+                    retval.replace(handshakeSuccess ? 0 : -1);
                 }
 
-                if (this.isNonBlocking) {
-                    fcntl(this.sockFd, F_SETFL, this.originalFlags);
-                }
-
-                if (handshakeSuccess) {
-                    const readableHost = getReadableAddress(host, isIPv6);
-                    if (DEBUG_MODE) console.debug(`SOCKS redirect successful for fd ${this.sockFd} to ${readableHost}:${port}`);
-                    retval.replace(0);
-                } else {
-                    if (DEBUG_MODE) console.error(`SOCKS redirect FAILED for fd ${this.sockFd}`);
-                    retval.replace(-1);
+                if (DEBUG_MODE) {
+                    console.debug(handshakeSuccess
+                        ? `SOCKS redirect successful for fd ${this.sockFd} to ${
+                            getReadableAddress(host, isIPv6)}:${port}`
+                        : `SOCKS redirect FAILED for fd ${this.sockFd}`
+                    );
                 }
             } else if (DEBUG_MODE) {
                 const fd = this.sockFd;
@@ -198,6 +222,11 @@
         : 'all unrecognized'
     } TCP connections to ${PROXY_HOST}:${PROXY_PORT} ==`);
 
+    const isIPv4Mapped = (/** @type {Uint8Array} */ hostBytes) =>
+        hostBytes.length === 16 &&
+        hostBytes.slice(0, 10).every(b => b === 0) &&
+        hostBytes.slice(10, 12).every(b => b === 255);
+
     const getReadableAddress = (
         /** @type {Uint8Array} */ hostBytes,
         /** @type {boolean} */ isIPv6
@@ -207,10 +236,7 @@
             return [...hostBytes].map(x => x.toString()).join('.');
         }
 
-        if (
-            hostBytes.slice(0, 10).every(b => b === 0) &&
-            hostBytes.slice(10, 12).every(b => b === 255)
-        ) {
+        if (isIPv4Mapped(hostBytes)) {
             // IPv4-mapped IPv6 address - print as IPv4 for readability
             return '::ffff:'+[...hostBytes.slice(12)].map(x => x.toString()).join('.');
         }
@@ -226,16 +252,42 @@
         return arrayA.every((x, i) => arrayB[i] === x);
     };
 
+    const SOCKS_TIMEOUT_MS = 5000;
+    const POLLIN = 0x1;
+
+    const waitForReadable = (sockfd, timeoutMs) => {
+        const pollFd = Memory.alloc(8);
+        pollFd.writeInt(sockfd);
+        pollFd.add(4).writeU16(POLLIN);
+        pollFd.add(6).writeU16(0);
+        return poll(pollFd, 1, timeoutMs) === 1;
+    };
+
+    // recv() repeatedly up to the data length we need (or timeout/hangup)
+    const recvAll = (sockfd, buffer, length) => {
+        let received = 0;
+        const deadline = Date.now() + SOCKS_TIMEOUT_MS;
+        while (received < length) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0 || !waitForReadable(sockfd, remaining)) return false;
+
+            const read = recv(sockfd, buffer.add(received), length - received, 0).toNumber();
+            if (read <= 0) return false; // Error, or the proxy hung up on us
+            received += read;
+        }
+        return true;
+    };
+
     function performSocksHandshake(sockfd, targetHostBytes, targetPort, isIPv6) {
         const hello = Memory.alloc(3).writeByteArray([0x05, 0x01, 0x00]);
-        if (send(sockfd, hello, 3, 0) < 0) {
+        if (send(sockfd, hello, 3, 0).toNumber() !== 3) {
             console.error("SOCKS: Failed to send hello");
             return false;
         }
 
         const response = Memory.alloc(2);
-        if (recv(sockfd, response, 2, 0) < 0) {
-            console.error("SOCKS: Failed to receive server choice");
+        if (!recvAll(sockfd, response, 2)) {
+            console.error("SOCKS: No auth method reply from the proxy");
             return false;
         }
 
@@ -246,6 +298,12 @@
 
         let req = [0x05, 0x01, 0x00]; // VER, CMD(CONNECT), RSV
 
+        // Map IPv6-mapped-IPv4 back to simple IPv4:
+        if (isIPv6 && isIPv4Mapped(targetHostBytes)) {
+            targetHostBytes = targetHostBytes.slice(12);
+            isIPv6 = false;
+        }
+
         if (isIPv6) {
             req.push(0x04); // ATYP: IPv6
         } else { // IPv4
@@ -255,14 +313,14 @@
         req.push(...targetHostBytes, (targetPort >> 8) & 0xff, targetPort & 0xff);
         const reqBuf = Memory.alloc(req.length).writeByteArray(req);
 
-        if (send(sockfd, reqBuf, req.length, 0) < 0) {
+        if (send(sockfd, reqBuf, req.length, 0).toNumber() !== req.length) {
             console.error("SOCKS: Failed to send connection request");
             return false;
         }
 
         const replyHeader = Memory.alloc(4);
-        if (recv(sockfd, replyHeader, 4, 0) < 0) {
-            console.error("SOCKS: Failed to receive reply header");
+        if (!recvAll(sockfd, replyHeader, 4)) {
+            console.error("SOCKS: No connection reply from the proxy");
             return false;
         }
 
@@ -272,11 +330,23 @@
             return false;
         }
 
+        // Reply ends with an address, which we need to consume to avoid leaking into the
+        // normal app traffic afterwards
         const atyp = replyHeader.add(3).readU8();
-        let remainingBytes = 0;
-        if (atyp === 0x01) remainingBytes = 4 + 2; // IPv4 + port
-        else if (atyp === 0x04) remainingBytes = 16 + 2; // IPv6 + port
-        if (remainingBytes > 0) recv(sockfd, Memory.alloc(remainingBytes), remainingBytes, 0);
+        const addressLength = atyp === 0x01 ? 4 + 2   // IPv4 + port
+            : atyp === 0x04 ? 16 + 2                  // IPv6 + port
+            : 0;
+
+        if (!addressLength) {
+            // Hostnames (ATYP 3) are legal but rare & HTK never uses them, just reject
+            console.error(`SOCKS: Server replied with an unsupported address type ${atyp}`);
+            return false;
+        }
+
+        if (!recvAll(sockfd, Memory.alloc(addressLength), addressLength)) {
+            console.error("SOCKS: Failed to read the bound address");
+            return false;
+        }
 
         return true;
     }
