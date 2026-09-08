@@ -26,7 +26,7 @@ waitForModule('libnetwork.dylib', (libnetwork) => {
     // This is the method to make a new endpoint to connect to:
     // https://developer.apple.com/documentation/network/2976720-nw_endpoint_create_host (iOS 12+)
     const nw_endpoint_create_host = new NativeFunction(
-        libnetwork.findExportByName('nw_endpoint_create_host'),
+        libnetwork.getExportByName('nw_endpoint_create_host'),
         'pointer', ['pointer', 'pointer']
     );
 
