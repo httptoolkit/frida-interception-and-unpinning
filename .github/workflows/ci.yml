@@ -48,6 +48,22 @@ jobs:
           tag: ${{ github.ref }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
 
+  test-native:
+    name: Run the native hook tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'test/native/package-lock.json'
+
+      - name: Run tests
+        run: cd test/native && npm install && npm test
+
   test-android:
     name: Test on Android emulator
     runs-on: ubuntu-latest

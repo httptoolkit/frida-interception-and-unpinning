@@ -1,0 +1,14 @@
+{
+  "name": "frida-scripts-native-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "mocha connect-hook.test.ts"
+  },
+  "dependencies": {
+    "@types/chai": "^5.2.2",
+    "chai": "^5.2.0",
+    "frida": "^17.17.0",
+    "mocha": "^11.7.1"
+  }
+}
