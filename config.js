@@ -177,7 +177,8 @@ function waitForModule(moduleName, callback) {
         return;
     }
 
-    MODULE_LOAD_CALLBACKS[moduleName] = callback;
+    if (!MODULE_LOAD_CALLBACKS[moduleName]) MODULE_LOAD_CALLBACKS[moduleName] = [];
+    MODULE_LOAD_CALLBACKS[moduleName].push(callback);
 }
 
 function findLoadedModule(moduleName) {
@@ -209,10 +210,10 @@ const MODULE_LOAD_CALLBACKS = {};
 Process.attachModuleObserver({
     onAdded(module) {
         const moduleName = getModuleName(module.name || module.path || '');
-        const callback = MODULE_LOAD_CALLBACKS[moduleName];
-        if (!callback) return;
+        const callbacks = MODULE_LOAD_CALLBACKS[moduleName];
+        if (!callbacks) return;
 
         delete MODULE_LOAD_CALLBACKS[moduleName];
-        callback(module);
+        callbacks.forEach((callback) => callback(module));
     }
 });
