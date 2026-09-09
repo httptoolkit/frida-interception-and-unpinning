@@ -157,6 +157,12 @@ describe('Test Android unpinning', function () {
             const failure = await waitForApp(session, () => fridaOutput);
 
             if (!failure) {
+                // Fail if any scripts print major warnings:
+                const scriptErrors = fridaOutput.split('\n').filter((line) => line.includes('!!!'));
+                if (scriptErrors.length) {
+                    throw new Error(`A script failed to set itself up:\n${scriptErrors.join('\n')}`);
+                }
+
                 console.log('App loaded');
                 return;
             }
