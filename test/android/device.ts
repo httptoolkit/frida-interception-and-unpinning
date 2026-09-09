@@ -356,7 +356,7 @@ export class DeviceApp {
      * entirely, so we re-tap once before giving up.
      */
     async waitForButtonResult(text: string, options: { timeout: number, retryTapAfter: number }) {
-        const startTime = Date.now();
+        let startTime = Date.now();
         let retapped = false;
 
         while (true) {
@@ -367,6 +367,11 @@ export class DeviceApp {
 
             const elapsed = Date.now() - startTime;
             if (elapsed > options.timeout) {
+                // Look once more before giving up:
+                const settledButton = this.buttons(await this.readScreen())
+                    .find((b) => b.text === text);
+                if (settledButton?.description) return settledButton.description;
+
                 // N.b. a button missing from this entirely (rather than present with no result)
                 // means it wasn't in the UI at all, e.g. it was covered or scrolled away:
                 throw await this.explainFailure(
@@ -379,7 +384,11 @@ export class DeviceApp {
                 console.log(`Re-tapping button ${text}`);
                 await this.tap(button);
                 retapped = true;
+
+                startTime = Date.now();
             }
+
+            await delay(250);
         }
     }
 
