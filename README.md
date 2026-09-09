@@ -124,9 +124,11 @@ Each script includes detailed documentation on what it does and how it works in 
 
         Modifies the native Android APIs to ensure that all trust stores trust your extra CA certificate by default, allowing encrypted TLS traffic to be captured.
 
+        This also disables the system's own default restrictions on that certificate, notably including system-level certificate transparency (opt-in in Android 16, default on in Android 17).
+
     * `android-certificate-unpinning.js`
 
-        Modifies or disables many common known techniques for additional certificate restrictions, including certificate pinning (accepting only a small set of recognized certificates, rather than all certificates trusted on the system) and certificate transparency (validating that all used certificates have been registered in public certificate logs).
+        Modifies or disables many common known techniques for additional certificate restrictions, including certificate pinning (accepting only a small set of recognized certificates, rather than all certificates trusted on the system) and extra certificate transparency checks (custom validations that all used certificates have been registered in public certificate logs).
 
     * `android-certificate-unpinning-fallback.js`
 

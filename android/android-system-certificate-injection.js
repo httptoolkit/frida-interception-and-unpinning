@@ -104,5 +104,32 @@ Java.perform(() => {
     // pinning too! It auto-trusts us in any implementation that uses TrustManagerImpl (Conscrypt) as
     // the underlying cert checking component.
 
+    // From Android 16 Conscrypt can enforce Certificate Transparency, and from Android 17 it
+    // does by default in many cases. This disables system-level CT checks in Conscrypt entirely:
+    [
+        'com.android.org.conscrypt.ct.CertificateTransparency',
+        'org.conscrypt.ct.CertificateTransparency',
+        'com.google.android.gms.org.conscrypt.ct.CertificateTransparency'
+    ].forEach((className) => {
+        let CertificateTransparency;
+        try {
+            CertificateTransparency = Java.use(className);
+        } catch (e) {
+            // Absent entirely before Android 16, so often not a big deal:
+            if (DEBUG_MODE) console.log(`[ ] Skipped ${className} (not present)`);
+            return;
+        }
+
+        try {
+            CertificateTransparency.checkCT.implementation = function () {};
+            if (DEBUG_MODE) console.log(`[+] Disabled certificate transparency in ${className}`);
+        } catch (e) {
+            // The class is here but we couldn't disable the check, so CT is about to start
+            // rejecting us and nothing in the resulting errors will say so. Definitely a problem.
+            console.warn(`[!] Found ${className} but could not disable certificate transparency:`);
+            console.warn(`    ${e.message ?? e}`);
+        }
+    });
+
     console.log('== System certificate trust injected ==');
 });

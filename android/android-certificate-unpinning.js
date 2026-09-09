@@ -71,6 +71,7 @@ function getCustomX509TrustManager() {
 // Some standard hook replacements for various cases:
 const NO_OP = () => {};
 const RETURN_TRUE = () => true;
+const RETURN_FALSE = () => false;
 const CHECK_OUR_TRUST_MANAGER_ONLY = () => {
     const trustManager = getCustomX509TrustManager();
     return (certs, authType) => {
@@ -126,29 +127,6 @@ const PINNING_FIXES = {
         },
         {
             methodName: 'checkChainPinning',
-            replacement: () => NO_OP
-        }
-    ],
-
-    // --- Native Conscrypt CertificateTransparency
-
-    'com.android.org.conscrypt.ct.CertificateTransparency': [
-        {
-            methodName: 'checkCT',
-            replacement: () => NO_OP
-        }
-    ],
-
-    'org.conscrypt.ct.CertificateTransparency': [
-        {
-            methodName: 'checkCT',
-            replacement: () => NO_OP
-        }
-    ],
-
-    'com.google.android.gms.org.conscrypt.ct.CertificateTransparency': [
-        {
-            methodName: 'checkCT',
             replacement: () => NO_OP
         }
     ],
@@ -429,23 +407,14 @@ const PINNING_FIXES = {
 
     // --- Appmattus Cert Transparency (https://github.com/appmattus/certificatetransparency/)
 
-    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyHostnameVerifier': [
+    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyBase': [
         {
-            methodName: 'verify',
-            replacement: () => RETURN_TRUE
-            // This is not called unless the cert passes basic trust checks, so it's safe to blindly accept.
+            methodName: 'enabledForCertificateTransparency',
+            replacement: () => RETURN_FALSE
         }
     ],
 
-    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyInterceptor': [
-        {
-            methodName: 'intercept',
-            replacement: () => (a) => a.proceed(a.request())
-            // This is not called unless the cert passes basic trust checks, so it's safe to blindly accept.
-        }
-    ],
-
-    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyTrustManager': [
+    'com.appmattus.certificatetransparency.internal.verifier.CertificateTransparencyTrustManagerBasic': [
         {
             methodName: 'checkServerTrusted',
             overload: ['[Ljava.security.cert.X509Certificate;', 'java.lang.String'],
