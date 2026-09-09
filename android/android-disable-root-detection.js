@@ -13,7 +13,7 @@
  *
  *************************************************************************************************/
 
-(() => {
+Java.perform(() => {
     let loggedRootDetectionWarning = false;
     function logFirstRootDetection() {
         if (!loggedRootDetectionWarning) {
@@ -117,6 +117,14 @@
         ])
     };
 
+    function isRootIndicatorPath(path) {
+        const lowercasePath = path.toLowerCase();
+        return ROOT_INDICATORS.paths.has(path) ||
+            lowercasePath.includes("magisk") ||
+            lowercasePath.endsWith("/su") ||
+            lowercasePath.includes("/su/");
+    }
+
     function bypassNativeFileCheck() {
         const fopen = LIB_C.findExportByName("fopen");
         if (fopen) {
@@ -126,8 +134,7 @@
                 },
                 onLeave(retval) {
                     if (retval.toInt32() !== 0) {
-                        const path = this.path.toLowerCase();
-                        if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
+                        if (isRootIndicatorPath(this.path)) {
                             if (DEBUG_MODE) {
                                 console.log(`Blocked possible root-detection: fopen ${this.path}`);
                             } else logFirstRootDetection();
@@ -146,8 +153,7 @@
                 },
                 onLeave(retval) {
                     if (retval.toInt32() === 0) {
-                        const path = this.path.toLowerCase();
-                        if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
+                        if (isRootIndicatorPath(this.path)) {
                             if (DEBUG_MODE) {
                                 console.debug(`Blocked possible root detection: access ${this.path}`);
                             } else logFirstRootDetection();
@@ -165,8 +171,7 @@
                     this.path = args[0].readUtf8String();
                 },
                 onLeave(retval) {
-                    const path = this.path.toLowerCase();
-                    if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
+                    if (isRootIndicatorPath(this.path)) {
                         if (DEBUG_MODE) {
                             console.debug(`Blocked possible root detection: stat ${this.path}`);
                         } else logFirstRootDetection();
@@ -183,8 +188,7 @@
                     this.path = args[0].readUtf8String();
                 },
                 onLeave(retval) {
-                    const path = this.path.toLowerCase();
-                    if (ROOT_INDICATORS.paths.has(this.path) || path.includes("magisk") || path.includes("/su") || path.endsWith("/su")) {
+                    if (isRootIndicatorPath(this.path)) {
                         if (DEBUG_MODE) {
                             console.debug(`Blocked possible root detection: lstat ${this.path}`);
                         } else logFirstRootDetection();
@@ -248,7 +252,7 @@
         };
     }
 
-    function setProp() {
+    function spoofBuildProperties() {
         const Build = Java.use("android.os.Build");
 
         // We do a little work to make the minimum changes required to hide in the BUILD fingerprint,
@@ -283,7 +287,9 @@
             fieldObj.setAccessible(true);
             fieldObj.set(null, value);
         });
+    }
 
+    function bypassPropertyChecks() {
         const system_property_get = LIB_C.findExportByName("__system_property_get");
         if (system_property_get) {
             Interceptor.attach(system_property_get, {
@@ -322,22 +328,42 @@
     function bypassRootPackageCheck() {
         const ApplicationPackageManager = Java.use("android.app.ApplicationPackageManager");
 
-        ApplicationPackageManager.getPackageInfo.overload('java.lang.String', 'int').implementation = function(str, i) {
-            if (ROOT_INDICATORS.packages.has(str)) {
-                if (DEBUG_MODE) {
-                    console.debug(`Blocked possible root detection: package info for ${str}`);
-                } else logFirstRootDetection();
-                str = "invalid.example.nonexistent.package";
+        // Android 13 added PackageInfoFlags variants of both of these, and it's the int
+        // variants that delegate to those rather than the other way around, so an app calling
+        // the newer API directly is only covered if we patch both:
+        const FLAG_TYPES = ['int', 'android.content.pm.PackageManager$PackageInfoFlags'];
+
+        const patchOverload = (method, argTypes, buildReplacement) => {
+            let overload;
+            try {
+                overload = method.overload(...argTypes);
+            } catch (e) {
+                return; // Not present on this Android version
             }
-            return this.getPackageInfo(str, i);
+            overload.implementation = buildReplacement();
         };
 
-        ApplicationPackageManager.getInstalledPackages.overload('int').implementation = function(flags) {
-            const packages = this.getInstalledPackages(flags);
-            const packageList = packages.toArray();
-            const filteredPackages = packageList.filter(pkg => !ROOT_INDICATORS.packages.has(pkg.packageName?.value));
-            return Java.use("java.util.ArrayList").$new(Java.use("java.util.Arrays").asList(filteredPackages));
-        };
+        FLAG_TYPES.forEach((flagsType) => {
+            patchOverload(ApplicationPackageManager.getPackageInfo,
+                ['java.lang.String', flagsType], () => function (packageName, flags) {
+                    if (ROOT_INDICATORS.packages.has(packageName)) {
+                        if (DEBUG_MODE) {
+                            console.debug(`Blocked possible root detection: package info for ${packageName}`);
+                        } else logFirstRootDetection();
+                        packageName = "invalid.example.nonexistent.package";
+                    }
+                    return this.getPackageInfo.overload('java.lang.String', flagsType)
+                        .call(this, packageName, flags);
+                });
+
+            patchOverload(ApplicationPackageManager.getInstalledPackages,
+                [flagsType], () => function (flags) {
+                    const packages = this.getInstalledPackages.overload(flagsType).call(this, flags);
+                    const filteredPackages = packages.toArray()
+                        .filter(pkg => !ROOT_INDICATORS.packages.has(pkg.packageName?.value));
+                    return Java.use("java.util.ArrayList").$new(Java.use("java.util.Arrays").asList(filteredPackages));
+                });
+        });
     }
 
     function bypassShellCommands() {
@@ -387,14 +413,30 @@
         };
     }
 
-    try {
-        bypassNativeFileCheck();
-        bypassJavaFileCheck();
-        setProp();
-        bypassRootPackageCheck();
-        bypassShellCommands();
+    // Android's internals shift between releases, and these bypasses are independent of one
+    // another, so one failing must not take the rest of them down with it:
+    const BYPASSES = {
+        'native file checks': bypassNativeFileCheck,
+        'Java file checks': bypassJavaFileCheck,
+        'build properties': spoofBuildProperties,
+        'system property checks': bypassPropertyChecks,
+        'root package checks': bypassRootPackageCheck,
+        'shell commands': bypassShellCommands
+    };
+
+    const failures = Object.entries(BYPASSES).filter(([name, applyBypass]) => {
+        try {
+            applyBypass();
+            return false;
+        } catch (error) {
+            console.warn(`[!] Could not hook ${name} to disable root detection: ${error}`);
+            return true;
+        }
+    });
+
+    if (failures.length === Object.keys(BYPASSES).length) {
+        console.error("\n !!! Error setting up root detection bypass !!!");
+    } else {
         console.log("== Disabled Android root detection ==");
-    } catch (error) {
-        console.error("\n !!! Error setting up root detection bypass !!!", error);
     }
-})();
+});
