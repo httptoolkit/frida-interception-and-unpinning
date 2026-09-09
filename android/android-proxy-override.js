@@ -22,85 +22,113 @@
 Java.perform(() => {
     // Set default JVM system properties for the proxy address. Notably these are used
     // to initialize WebView configuration.
-    Java.use('java.lang.System').setProperty('http.proxyHost', PROXY_HOST);
-    Java.use('java.lang.System').setProperty('http.proxyPort', PROXY_PORT.toString());
-    Java.use('java.lang.System').setProperty('https.proxyHost', PROXY_HOST);
-    Java.use('java.lang.System').setProperty('https.proxyPort', PROXY_PORT.toString());
+    function setProxySystemProperties() {
+        Java.use('java.lang.System').setProperty('http.proxyHost', PROXY_HOST);
+        Java.use('java.lang.System').setProperty('http.proxyPort', PROXY_PORT.toString());
+        Java.use('java.lang.System').setProperty('https.proxyHost', PROXY_HOST);
+        Java.use('java.lang.System').setProperty('https.proxyPort', PROXY_PORT.toString());
 
-    Java.use('java.lang.System').clearProperty('http.nonProxyHosts');
-    Java.use('java.lang.System').clearProperty('https.nonProxyHosts');
+        Java.use('java.lang.System').clearProperty('http.nonProxyHosts');
+        Java.use('java.lang.System').clearProperty('https.nonProxyHosts');
 
-    // Some Android internals attempt to reset these settings to match the device configuration.
-    // We block that directly here:
-    const controlledSystemProperties = [
-        'http.proxyHost',
-        'http.proxyPort',
-        'https.proxyHost',
-        'https.proxyPort',
-        'http.nonProxyHosts',
-        'https.nonProxyHosts'
-    ];
-    Java.use('java.lang.System').clearProperty.implementation = function (property) {
-        if (controlledSystemProperties.includes(property)) {
-            if (DEBUG_MODE) console.log(`Ignoring attempt to clear ${property} system property`);
-            return this.getProperty(property);
+        // Some Android internals attempt to reset these settings to match the device configuration.
+        // We block that directly here:
+        const controlledSystemProperties = [
+            'http.proxyHost',
+            'http.proxyPort',
+            'https.proxyHost',
+            'https.proxyPort',
+            'http.nonProxyHosts',
+            'https.nonProxyHosts'
+        ];
+        Java.use('java.lang.System').clearProperty.implementation = function (property) {
+            if (controlledSystemProperties.includes(property)) {
+                if (DEBUG_MODE) console.log(`Ignoring attempt to clear ${property} system property`);
+                return this.getProperty(property);
+            }
+            return this.clearProperty(...arguments);
         }
-        return this.clearProperty(...arguments);
-    }
-    Java.use('java.lang.System').setProperty.implementation = function (property) {
-        if (controlledSystemProperties.includes(property)) {
-            if (DEBUG_MODE) console.log(`Ignoring attempt to override ${property} system property`);
-            return this.getProperty(property);
+        Java.use('java.lang.System').setProperty.implementation = function (property) {
+            if (controlledSystemProperties.includes(property)) {
+                if (DEBUG_MODE) console.log(`Ignoring attempt to override ${property} system property`);
+                return this.getProperty(property);
+            }
+            return this.setProperty(...arguments);
         }
-        return this.setProperty(...arguments);
+
+        console.log(`== Proxy system configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
     }
 
     // Configure the app's proxy directly, via the app connectivity manager service:
-    const ConnectivityManager = Java.use('android.net.ConnectivityManager');
-    const ProxyInfo = Java.use('android.net.ProxyInfo');
-    ConnectivityManager.getDefaultProxy.implementation = () => ProxyInfo.$new(PROXY_HOST, PROXY_PORT, '');
-    // (Not clear if this works 100% - implying there are ConnectivityManager subclasses handling this)
-
-    console.log(`== Proxy system configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
+    function overrideConnectivityManagerProxy() {
+        const ConnectivityManager = Java.use('android.net.ConnectivityManager');
+        const ProxyInfo = Java.use('android.net.ProxyInfo');
+        ConnectivityManager.getDefaultProxy.implementation = () => ProxyInfo.$new(PROXY_HOST, PROXY_PORT, '');
+        // (Not clear if this works 100% - implying there are ConnectivityManager subclasses handling this)
+    }
 
     // Configure the proxy indirectly, by overriding the return value for all ProxySelectors everywhere:
-    const Collections = Java.use('java.util.Collections');
-    const ProxyType = Java.use('java.net.Proxy$Type');
-    const InetSocketAddress = Java.use('java.net.InetSocketAddress');
-    const ProxyCls = Java.use('java.net.Proxy'); // 'Proxy' is reserved in JS
+    function overrideProxySelectors() {
+        const Collections = Java.use('java.util.Collections');
+        const ProxyType = Java.use('java.net.Proxy$Type');
+        const InetSocketAddress = Java.use('java.net.InetSocketAddress');
+        const ProxyCls = Java.use('java.net.Proxy'); // 'Proxy' is reserved in JS
 
-    const targetProxy = ProxyCls.$new(
-        ProxyType.HTTP.value,
-        InetSocketAddress.$new(PROXY_HOST, PROXY_PORT)
-    );
-    const getTargetProxyList = () => Collections.singletonList(targetProxy);
+        const targetProxy = ProxyCls.$new(
+            ProxyType.HTTP.value,
+            InetSocketAddress.$new(PROXY_HOST, PROXY_PORT)
+        );
+        const getTargetProxyList = () => Collections.singletonList(targetProxy);
 
-    const ProxySelector = Java.use('java.net.ProxySelector');
+        const ProxySelector = Java.use('java.net.ProxySelector');
 
-    // Find every implementation of ProxySelector by quickly scanning method signatures, and
-    // then checking whether each match actually implements java.net.ProxySelector.
-    //
-    // Scanning every class is slow, so we can the apps own classes in full, but scan platform
-    // classes only for *Proxy* (matches all known cases).
-    const selectorClassNames = new Set([
-        '*Proxy*!select(java.net.URI): java.util.List/s',
-        '*!select(java.net.URI): java.util.List/su'
-    ].flatMap((query) => Java.enumerateMethods(query))
-        .flatMap((matchingLoader) => matchingLoader.classes.map((classData) => classData.name))
-    );
+        // Find every implementation of ProxySelector by quickly scanning method signatures, and
+        // then checking whether each match actually implements java.net.ProxySelector.
+        //
+        // Scanning every class is slow, so we can the apps own classes in full, but scan platform
+        // classes only for *Proxy* (matches all known cases).
+        const selectorClassNames = new Set([
+            '*Proxy*!select(java.net.URI): java.util.List/s',
+            '*!select(java.net.URI): java.util.List/su'
+        ].flatMap((query) => Java.enumerateMethods(query))
+            .flatMap((matchingLoader) => matchingLoader.classes.map((classData) => classData.name))
+        );
 
-    const proxySelectorClasses = [...selectorClassNames]
-        .map((className) => Java.use(className))
-        .filter((Cls) => ProxySelector.class.isAssignableFrom(Cls.class));
+        const proxySelectorClasses = [...selectorClassNames]
+            .map((className) => Java.use(className))
+            .filter((Cls) => ProxySelector.class.isAssignableFrom(Cls.class));
 
-    // Replace the 'select' of every implementation, so they all send traffic to us:
-    proxySelectorClasses.forEach(ProxySelectorCls => {
-        if (DEBUG_MODE) {
-            console.log('Rewriting', ProxySelectorCls.toString());
+        // Replace the 'select' of every implementation, so they all send traffic to us:
+        proxySelectorClasses.forEach(ProxySelectorCls => {
+            if (DEBUG_MODE) {
+                console.log('Rewriting', ProxySelectorCls.toString());
+            }
+            ProxySelectorCls.select.implementation = () => getTargetProxyList()
+        });
+
+        console.log(`== Proxy configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
+    }
+
+    // An app that ignores one of these mechanisms may well respect another, and Android's own
+    // APIs shift between releases, so each is applied independently: one failing should narrow
+    // what we intercept, not stop us configuring the proxy at all.
+    const PROXY_OVERRIDES = {
+        'JVM proxy system properties': setProxySystemProperties,
+        'the app connectivity manager': overrideConnectivityManagerProxy,
+        'proxy selectors': overrideProxySelectors
+    };
+
+    const failures = Object.entries(PROXY_OVERRIDES).filter(([name, applyOverride]) => {
+        try {
+            applyOverride();
+            return false;
+        } catch (error) {
+            console.warn(`[!] Could not override ${name}: ${error}`);
+            return true;
         }
-        ProxySelectorCls.select.implementation = () => getTargetProxyList()
     });
 
-    console.log(`== Proxy configuration overridden to ${PROXY_HOST}:${PROXY_PORT} ==`);
+    if (failures.length === Object.keys(PROXY_OVERRIDES).length) {
+        console.error('\n !!! Failed to override the proxy configuration at all !!!');
+    }
 });
-
