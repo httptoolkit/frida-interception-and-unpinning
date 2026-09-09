@@ -252,7 +252,7 @@
         return arrayA.every((x, i) => arrayB[i] === x);
     };
 
-    const SOCKS_TIMEOUT_MS = 5000;
+    const SOCKS_TIMEOUT_MS = 2000;
     const POLLIN = 0x1;
 
     const waitForReadable = (sockfd, timeoutMs) => {
