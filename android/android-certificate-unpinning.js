@@ -433,6 +433,19 @@ const PINNING_FIXES = {
                 };
             }
         }
+    ],
+
+    // --- Cronet (Chromium's network stack - does its own native TLS, bypassing the hooks above)
+
+    'org.chromium.net.CronetEngine$Builder': [
+        {
+            methodName: 'enablePublicKeyPinningBypassForLocalTrustAnchors',
+            replacement: (targetMethod) => function (_enabled) {
+                // Ignore the app's choice and always allow local trust anchors to bypass
+                // pinning - the method returns the builder, so preserve that for chaining:
+                return targetMethod.call(this, true);
+            }
+        }
     ]
 
 };
