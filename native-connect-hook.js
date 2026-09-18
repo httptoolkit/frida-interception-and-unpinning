@@ -242,8 +242,30 @@
         }
 
         else {
-            // Real IPv6:
-            return `[${[...hostBytes].map(x => x.toString(16)).join(':')}]`;
+            // Real IPv6: pair up the 16 bytes into 8 hextets, then collapse the longest run
+            // of zero hextets to '::' (per RFC 5952) so the output is actually readable,
+            // rather than 16 stray single-byte values (e.g. '2001:db8::1' not '20:1:d:b8:...:1'):
+            const hextets = [];
+            for (let i = 0; i < 16; i += 2) {
+                hextets.push(((hostBytes[i] << 8) | hostBytes[i + 1]).toString(16));
+            }
+
+            // Find the longest run of consecutive zero hextets (only runs of 2+ are worth
+            // compressing) preferring the leftmost run on a tie:
+            let runStart = -1, runLength = 0;
+            for (let i = 0; i < hextets.length; /* advance below */) {
+                if (hextets[i] !== '0') { i += 1; continue; }
+                let end = i;
+                while (end < hextets.length && hextets[end] === '0') end += 1;
+                if (end - i > runLength) { runStart = i; runLength = end - i; }
+                i = end;
+            }
+
+            const readable = runLength >= 2
+                ? `${hextets.slice(0, runStart).join(':')}::${hextets.slice(runStart + runLength).join(':')}`
+                : hextets.join(':');
+
+            return `[${readable}]`;
         }
     };
 
