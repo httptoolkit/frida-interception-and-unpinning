@@ -283,9 +283,7 @@ Java.perform(() => {
         };
 
         Object.entries(fields).forEach(([field, value]) => {
-            const fieldObj = Build.class.getDeclaredField(field);
-            fieldObj.setAccessible(true);
-            fieldObj.set(null, value);
+            Build[field].value = value;
         });
     }
 
